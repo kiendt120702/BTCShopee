@@ -22,7 +22,8 @@ import {
 } from '@/components/ui/dialog';
 
 interface Shop {
-  shop_id: number;
+  id: string; // UUID - internal ID
+  shop_id: number; // Shopee shop ID
   shop_name: string | null;
   shop_logo: string | null;
   region: string | null;
@@ -91,7 +92,7 @@ export function ShopManagementPanel() {
 
       const shopsWithRole: ShopWithRole[] = (shopsData || []).map(shop => ({
         ...shop,
-        role: roleMap.get(shop.shop_id) || 'member',
+        role: roleMap.get(shop.id) || 'member', // Use shop.id (UUID) to match roleMap key
       }));
 
       setShops(shopsWithRole);
@@ -165,21 +166,23 @@ export function ShopManagementPanel() {
 
     setDeleting(true);
     try {
+      // Use shop.id (UUID) for apishopee_shop_members.shop_id
       const { error: membersError } = await supabase
         .from('apishopee_shop_members')
         .delete()
-        .eq('shop_id', shopToDelete.shop_id);
+        .eq('shop_id', shopToDelete.id);
 
       if (membersError) throw membersError;
 
+      // Use shop.id (UUID) for apishopee_shops.id
       const { error: shopError } = await supabase
         .from('apishopee_shops')
         .delete()
-        .eq('shop_id', shopToDelete.shop_id);
+        .eq('id', shopToDelete.id);
 
       if (shopError) throw shopError;
 
-      setShops(prev => prev.filter(s => s.shop_id !== shopToDelete.shop_id));
+      setShops(prev => prev.filter(s => s.id !== shopToDelete.id));
       setDeleteDialogOpen(false);
       setShopToDelete(null);
 
@@ -346,7 +349,7 @@ export function ShopManagementPanel() {
           <DataTable
             columns={columns}
             data={shops}
-            keyExtractor={(shop) => shop.shop_id}
+            keyExtractor={(shop) => shop.id}
             emptyMessage="Chưa có shop nào được kết nối"
             emptyDescription="Nhấn 'Kết nối Shop' để bắt đầu"
           />
