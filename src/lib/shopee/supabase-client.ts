@@ -34,52 +34,54 @@ export async function getAuthorizationUrl(
     partner_name: partnerInfo.partner_name 
   } : null);
 
-  try {
-    console.log('[Shopee] Invoking apishopee-auth Edge Function...');
-    console.log('[Shopee] Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...');
-    
-    // Add timeout wrapper
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout after 30s')), 30000);
-    });
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    const invokePromise = supabase.functions.invoke('apishopee-auth', {
-      body: {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase not configured');
+  }
+
+  try {
+    const functionUrl = `${supabaseUrl}/functions/v1/apishopee-auth`;
+    console.log('[Shopee] Calling Edge Function directly:', functionUrl);
+
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'apikey': supabaseAnonKey,
+      },
+      body: JSON.stringify({
         action: 'get-auth-url',
         redirect_uri: redirectUri,
         partner_info: partnerInfo,
-      },
+      }),
     });
 
-    console.log('[Shopee] Waiting for Edge Function response...');
-    const { data, error } = await Promise.race([invokePromise, timeoutPromise]) as { data: unknown; error: unknown };
+    console.log('[Shopee] Response status:', response.status);
 
-    console.log('[Shopee] Edge Function response received:', { data, error });
-
-    if (error) {
-      console.error('[Shopee] Edge Function error:', error);
-      throw new Error((error as Error).message || 'Failed to get auth URL from Edge Function');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Shopee] HTTP error:', response.status, errorText);
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
-    if (!data) {
-      console.error('[Shopee] No data returned from Edge Function');
-      throw new Error('No response data from server');
+    const data = await response.json();
+    console.log('[Shopee] Edge Function response:', data);
+
+    if (data.error) {
+      console.error('[Shopee] Server returned error:', data.error, data.message);
+      throw new Error(data.message || data.error || 'Server error');
     }
 
-    const responseData = data as { error?: string; message?: string; auth_url?: string };
-
-    if (responseData.error) {
-      console.error('[Shopee] Server returned error:', responseData.error, responseData.message);
-      throw new Error(responseData.message || responseData.error || 'Server error');
-    }
-
-    if (!responseData.auth_url) {
+    if (!data.auth_url) {
       console.error('[Shopee] No auth_url in response:', data);
-      throw new Error(responseData.message || 'No auth URL returned from server');
+      throw new Error(data.message || 'No auth URL returned from server');
     }
 
-    console.log('[Shopee] Got auth_url:', responseData.auth_url.substring(0, 100) + '...');
-    return responseData.auth_url;
+    console.log('[Shopee] Got auth_url:', data.auth_url.substring(0, 100) + '...');
+    return data.auth_url;
   } catch (err) {
     console.error('[Shopee] getAuthorizationUrl exception:', err);
     throw err;
