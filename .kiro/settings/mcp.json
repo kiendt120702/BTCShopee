@@ -17,7 +17,8 @@
         "execute_sql",
         "list_migrations",
         "get_advisors",
-        "get_project_url"
+        "get_project_url",
+        "get_publishable_keys"
       ]
     }
   }
