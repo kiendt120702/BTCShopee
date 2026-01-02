@@ -1,15 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { ColumnDef } from '@tanstack/react-table';
 import { supabase, getShopUuidFromShopId } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { getCampaignIdList, getCampaignSettingInfo, type CampaignIdItem, type AdType, type CommonInfo } from '@/lib/shopee';
 import { cn } from '@/lib/utils';
+import { DataTable } from '@/components/ui/data-table';
 
 interface CampaignData extends CampaignIdItem { name?: string; status?: string; common_info?: CommonInfo; }
-interface BudgetSchedule { id: string; campaign_id: number; campaign_name: string; ad_type: string; hour_start: number; hour_end: number; budget: number; days_of_week?: number[]; specific_dates?: string[]; is_active?: boolean; created_at?: string; }
+interface BudgetSchedule { id: string; campaign_id: number; campaign_name: string; ad_type: string; hour_start: number; hour_end: number; minute_start?: number; minute_end?: number; budget: number; days_of_week?: number[]; specific_dates?: string[]; is_active?: boolean; created_at?: string; }
 interface BudgetLog { id: string; campaign_id: number; campaign_name?: string; new_budget: number; status: string; executed_at: string; }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -39,7 +42,10 @@ export default function AdsPanel() {
   const [statusFilter, setStatusFilter] = useState<string>('ongoing');
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [selectedCampaigns, setSelectedCampaigns] = useState<number[]>([]);
-  const [bulkHours, setBulkHours] = useState<number[]>([]);
+  const [bulkSlots, setBulkSlots] = useState<string[]>([]); // Format: "HH:MM" như "00:00", "00:30", "01:00"...
+  const [editingSchedule, setEditingSchedule] = useState<BudgetSchedule | null>(null);
+  const [editBudgetValue, setEditBudgetValue] = useState('');
+  const [deleteScheduleId, setDeleteScheduleId] = useState<string | null>(null);
   const formatPrice = (p: number) => new Intl.NumberFormat('vi-VN').format(p) + 'đ';
   const filteredCampaigns = statusFilter === 'all' ? campaigns : campaigns.filter(c => c.status === statusFilter);
   const toggleDate = (date: string) => setSelectedDates(prev => prev.includes(date) ? prev.filter(d => d !== date) : [...prev, date].sort());
@@ -172,54 +178,291 @@ export default function AdsPanel() {
     const { data } = await supabase.from('apishopee_ads_budget_logs').select('*').eq('shop_id', shopUuid).order('executed_at', { ascending: false }).limit(50); 
     setLogs(data || []); 
   };
-  const hasScheduleAtHour = (cid: number, h: number) => schedules.some(s => s.campaign_id === cid && h >= s.hour_start && h < s.hour_end);
-  const clearAllSelections = () => { setSelectedCampaigns([]); setBulkHours([]); };
+
+  // TanStack Table columns for Manage tab
+  const campaignColumns: ColumnDef<CampaignData>[] = useMemo(() => [
+    {
+      accessorKey: 'name',
+      header: 'Tên',
+      cell: ({ row }) => (
+        <span className="font-medium text-sm text-slate-700 break-words whitespace-normal">
+          {row.original.name || 'Campaign ' + row.original.campaign_id}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'campaign_id',
+      header: 'ID',
+      size: 100,
+      cell: ({ row }) => (
+        <span className="text-sm text-slate-500 font-mono">{row.original.campaign_id}</span>
+      ),
+    },
+    {
+      accessorKey: 'status',
+      header: 'Trạng thái',
+      size: 100,
+      cell: ({ row }) => (
+        <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap", STATUS_MAP[row.original.status || '']?.color)}>
+          {STATUS_MAP[row.original.status || '']?.label || '-'}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'budget',
+      header: 'Ngân sách',
+      size: 120,
+      cell: ({ row }) => (
+        <span className="text-sm font-semibold text-orange-500 whitespace-nowrap">
+          {row.original.common_info?.campaign_budget ? formatPrice(row.original.common_info.campaign_budget) : '-'}
+        </span>
+      ),
+    },
+  ], []);
+
+  // TanStack Table columns for Saved schedules tab
+  const scheduleColumns: ColumnDef<BudgetSchedule>[] = useMemo(() => [
+    {
+      accessorKey: 'campaign_name',
+      header: 'Chiến dịch',
+      cell: ({ row }) => (
+        <span className="font-medium text-sm text-slate-700 break-words">
+          {row.original.campaign_name}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'campaign_id',
+      header: 'ID',
+      size: 100,
+      cell: ({ row }) => (
+        <span className="text-sm text-slate-500 font-mono">{row.original.campaign_id}</span>
+      ),
+    },
+    {
+      accessorKey: 'ad_type',
+      header: 'Loại',
+      size: 90,
+      cell: ({ row }) => (
+        <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap", AD_TYPE_MAP[row.original.ad_type]?.color || 'bg-slate-100 text-slate-600')}>
+          {AD_TYPE_MAP[row.original.ad_type]?.label || row.original.ad_type}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'hour_start',
+      header: 'Khung giờ',
+      size: 150,
+      cell: ({ row }) => {
+        const hs = row.original.hour_start;
+        const ms = row.original.minute_start || 0;
+        const he = row.original.hour_end;
+        const me = row.original.minute_end || 0;
+        const startStr = `${hs.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
+        const endStr = he === 24 && me === 0 ? '24:00' : `${he.toString().padStart(2, '0')}:${me.toString().padStart(2, '0')}`;
+        return (
+          <span className="text-sm text-slate-600 whitespace-nowrap">
+            {startStr} - {endStr}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'budget',
+      header: 'Ngân sách',
+      size: 120,
+      cell: ({ row }) => (
+        <span className="text-sm font-semibold text-orange-500 whitespace-nowrap">
+          {formatPrice(row.original.budget)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Ngày tạo',
+      size: 130,
+      cell: ({ row }) => (
+        <span className="text-sm text-slate-500 whitespace-nowrap">
+          {row.original.created_at ? new Date(row.original.created_at).toLocaleDateString('vi-VN') : '-'}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: '',
+      size: 80,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1">
+          <button onClick={() => openEditSchedule(row.original)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Chỉnh sửa">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button onClick={() => setDeleteScheduleId(row.original.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Xóa">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+      ),
+    },
+  ], []);
+
+  // TanStack Table columns for History tab
+  const logColumns: ColumnDef<BudgetLog>[] = useMemo(() => [
+    {
+      accessorKey: 'campaign_name',
+      header: 'Chiến dịch',
+      cell: ({ row }) => (
+        <span className="font-medium text-sm text-slate-700 break-words whitespace-normal">
+          {row.original.campaign_name || 'Campaign ' + row.original.campaign_id}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'campaign_id',
+      header: 'ID',
+      size: 100,
+      cell: ({ row }) => (
+        <span className="text-sm text-slate-500 font-mono">{row.original.campaign_id}</span>
+      ),
+    },
+    {
+      accessorKey: 'new_budget',
+      header: 'Ngân sách',
+      size: 120,
+      cell: ({ row }) => (
+        <span className="text-sm font-semibold text-orange-500 whitespace-nowrap">{formatPrice(row.original.new_budget)}</span>
+      ),
+    },
+    {
+      accessorKey: 'status',
+      header: 'Trạng thái',
+      size: 90,
+      cell: ({ row }) => (
+        <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap", row.original.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
+          {row.original.status === 'success' ? 'Thành công' : 'Lỗi'}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'executed_at',
+      header: 'Thời gian',
+      size: 150,
+      cell: ({ row }) => (
+        <span className="text-sm text-slate-500 whitespace-nowrap">{new Date(row.original.executed_at).toLocaleString('vi-VN')}</span>
+      ),
+    },
+  ], []);
+
+  const hasScheduleAtSlot = (cid: number, h: number, m: number) => {
+    const slotMinutes = h * 60 + m;
+    return schedules.some(s => {
+      if (s.campaign_id !== cid) return false;
+      const startMinutes = s.hour_start * 60 + (s.minute_start || 0);
+      const endMinutes = s.hour_end * 60 + (s.minute_end || 0);
+      return slotMinutes >= startMinutes && slotMinutes < endMinutes;
+    });
+  };
+  const clearAllSelections = () => { setSelectedCampaigns([]); setBulkSlots([]); };
   const toggleCampaignSelection = (cid: number) => { setSelectedCampaigns(p => p.includes(cid) ? p.filter(x => x !== cid) : [...p, cid]); };
-  const toggleBulkHour = (h: number) => { setBulkHours(p => p.includes(h) ? p.filter(x => x !== h) : [...p, h].sort((a, b) => a - b)); };
+  const toggleBulkSlot = (slot: string) => { setBulkSlots(p => p.includes(slot) ? p.filter(x => x !== slot) : [...p, slot].sort()); };
   const selectAllCampaigns = () => { setSelectedCampaigns(filteredCampaigns.map(c => c.campaign_id)); };
   const deselectAllCampaigns = () => { setSelectedCampaigns([]); };
-  const openBulkDialog = () => { if (selectedCampaigns.length === 0) { toast({ title: 'Chọn ít nhất 1 chiến dịch' }); return; } if (bulkHours.length === 0) { toast({ title: 'Chọn ít nhất 1 khung giờ' }); return; } setBudgetValue(''); setShowBulkDialog(true); };
-  const deleteSchedule = async (id: string) => { if (!confirm('Xóa?')) return; await supabase.from('apishopee_scheduled_ads_budget').delete().eq('id', id); toast({ title: 'Đã xóa' }); loadSchedules(); };
+  const openBulkDialog = () => { if (selectedCampaigns.length === 0) { toast({ title: 'Chọn ít nhất 1 chiến dịch' }); return; } if (bulkSlots.length === 0) { toast({ title: 'Chọn ít nhất 1 khung giờ' }); return; } setBudgetValue(''); setShowBulkDialog(true); };
+  const deleteSchedule = async (id: string) => { 
+    await supabase.from('apishopee_scheduled_ads_budget').delete().eq('id', id); 
+    toast({ title: 'Đã xóa' }); 
+    setDeleteScheduleId(null);
+    loadSchedules(); 
+  };
+  
+  const openEditSchedule = (schedule: BudgetSchedule) => {
+    setEditingSchedule(schedule);
+    setEditBudgetValue(schedule.budget.toString());
+  };
+
+  const saveEditSchedule = async () => {
+    if (!editingSchedule) return;
+    const budget = parseFloat(editBudgetValue.replace(/\./g, ''));
+    if (isNaN(budget) || budget < 0) { toast({ title: 'Ngân sách không hợp lệ' }); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('apishopee_scheduled_ads_budget')
+        .update({ budget })
+        .eq('id', editingSchedule.id);
+      if (error) throw error;
+      toast({ title: 'Đã cập nhật ngân sách' });
+      setEditingSchedule(null);
+      loadSchedules();
+    } catch (e) {
+      toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
   
   const saveBulkSchedule = async () => {
-    if (!token?.shop_id || selectedCampaigns.length === 0 || bulkHours.length === 0) return;
+    if (!token?.shop_id || selectedCampaigns.length === 0 || bulkSlots.length === 0) return;
     const budget = parseFloat(budgetValue.replace(/\./g, ''));
     if (isNaN(budget) || budget < 0) { toast({ title: 'Ngân sách không hợp lệ' }); return; }
     if (scheduleType === 'specific' && selectedDates.length === 0) { toast({ title: 'Vui lòng chọn ít nhất 1 ngày' }); return; }
     setSaving(true);
-    try {
-      // Get the UUID for this shop
-      const shopUuid = await getShopUuidFromShopId(token.shop_id);
-      if (!shopUuid) {
-        toast({ title: 'Lỗi', description: 'Không tìm thấy shop', variant: 'destructive' });
-        setSaving(false);
-        return;
-      }
-      const records = selectedCampaigns.map(cid => {
-        const campaign = campaigns.find(c => c.campaign_id === cid);
-        return {
-          shop_id: shopUuid,
-          campaign_id: cid,
-          campaign_name: campaign?.name || '',
-          ad_type: campaign?.ad_type || 'auto',
-          hour_start: Math.min(...bulkHours),
-          hour_end: Math.max(...bulkHours) + 1,
-          budget,
-          days_of_week: scheduleType === 'daily' ? [0,1,2,3,4,5,6] : [],
-          specific_dates: scheduleType === 'specific' ? selectedDates : [],
-          is_active: true
-        };
-      });
-      const { error } = await supabase.from('apishopee_scheduled_ads_budget').insert(records);
-      if (error) throw error;
-      toast({ title: 'Thành công', description: `Đã tạo lịch cho ${selectedCampaigns.length} chiến dịch` });
-      setShowBulkDialog(false);
-      setSelectedCampaigns([]);
-      setBulkHours([]);
-      setSelectedDates([]);
-      loadSchedules();
-    } catch (e) { toast({ title: 'Lỗi', description: (e as Error).message, variant: 'destructive' }); }
-    finally { setSaving(false); }
+    
+    // Get the UUID for this shop (should be cached after first load)
+    const shopUuid = await getShopUuidFromShopId(token.shop_id);
+    if (!shopUuid) {
+      toast({ title: 'Lỗi', description: 'Không tìm thấy shop', variant: 'destructive' });
+      setSaving(false);
+      return;
+    }
+    
+    // Parse slots để lấy hour và minute
+    const sortedSlots = [...bulkSlots].sort();
+    const firstSlot = sortedSlots[0].split(':').map(Number);
+    const lastSlot = sortedSlots[sortedSlots.length - 1].split(':').map(Number);
+    // Tính end time (cộng thêm 30 phút)
+    let endHour = lastSlot[0];
+    let endMinute = lastSlot[1] + 30;
+    if (endMinute >= 60) { endHour += 1; endMinute = 0; }
+    
+    const records = selectedCampaigns.map(cid => {
+      const campaign = campaigns.find(c => c.campaign_id === cid);
+      return {
+        shop_id: shopUuid,
+        campaign_id: cid,
+        campaign_name: campaign?.name || '',
+        ad_type: campaign?.ad_type || 'auto',
+        hour_start: firstSlot[0],
+        minute_start: firstSlot[1],
+        hour_end: endHour,
+        minute_end: endMinute,
+        budget,
+        days_of_week: scheduleType === 'daily' ? [0,1,2,3,4,5,6] : [],
+        specific_dates: scheduleType === 'specific' ? selectedDates : [],
+        is_active: true
+      };
+    });
+    
+    // Close dialog immediately for better UX
+    setShowBulkDialog(false);
+    setSelectedCampaigns([]);
+    setBulkSlots([]);
+    setSelectedDates([]);
+    
+    // Insert in background
+    supabase.from('apishopee_scheduled_ads_budget').insert(records)
+      .then(({ error }) => {
+        if (error) {
+          toast({ title: 'Lỗi', description: error.message, variant: 'destructive' });
+        } else {
+          toast({ title: 'Thành công', description: `Đã tạo lịch cho ${records.length} chiến dịch` });
+          loadSchedules();
+        }
+      })
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -255,19 +498,16 @@ export default function AdsPanel() {
       <div className="flex-1 overflow-auto">
         {activeTab === 'manage' && (
           <div className="p-4">
-            {loading ? <div className="text-center py-12"><div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" /><p className="text-gray-500">Đang tải...</p></div>
-            : campaigns.length === 0 ? <div className="text-center py-12 text-gray-400"><p className="font-medium">Chưa có chiến dịch</p><p className="text-sm mt-1">Nhấn Đồng bộ để tải</p></div>
-            : filteredCampaigns.length === 0 ? <div className="text-center py-12 text-gray-400"><p className="font-medium">Không có chiến dịch nào</p><p className="text-sm mt-1">Thử chọn trạng thái khác</p></div>
-            : <div className="bg-white rounded-lg border overflow-hidden">
-                <div className="grid grid-cols-[minmax(0,1fr)_90px_100px] gap-2 px-4 py-3 bg-gray-50 border-b text-xs font-medium text-gray-500"><div>Tên</div><div>Trạng thái</div><div className="text-right">Ngân sách</div></div>
-                <div className="divide-y">
-                  {filteredCampaigns.map(c => <div key={c.campaign_id} className="grid grid-cols-[minmax(0,1fr)_90px_100px] gap-2 px-4 py-3 items-center hover:bg-gray-50">
-                    <div className="min-w-0"><p className="font-medium text-sm line-clamp-2">{c.name || 'Campaign ' + c.campaign_id}</p><p className="text-xs text-gray-400">ID: {c.campaign_id}</p></div>
-                    <div><span className={cn("text-xs px-2 py-0.5 rounded", STATUS_MAP[c.status || '']?.color)}>{STATUS_MAP[c.status || '']?.label || '-'}</span></div>
-                    <div className="text-sm text-right font-medium text-orange-600">{c.common_info?.campaign_budget ? formatPrice(c.common_info.campaign_budget) : '-'}</div>
-                  </div>)}
-                </div>
-              </div>}
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <DataTable
+                columns={campaignColumns}
+                data={filteredCampaigns}
+                loading={loading}
+                loadingMessage="Đang tải..."
+                emptyMessage={campaigns.length === 0 ? "Chưa có chiến dịch. Nhấn Đồng bộ để tải" : "Không có chiến dịch nào với trạng thái này"}
+                pageSize={20}
+              />
+            </div>
           </div>
         )}
         {activeTab === 'schedule' && (
@@ -305,18 +545,40 @@ export default function AdsPanel() {
                   {selectedCampaigns.length > 0 && <span className="text-xs text-blue-600 font-medium">({selectedCampaigns.length} đã chọn)</span>}
                 </div>
               </div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm text-blue-700 whitespace-nowrap">Khung giờ:</span>
-                <div className="flex gap-0.5 flex-wrap">
-                  {Array.from({ length: 24 }, (_, h) => (
-                    <button key={h} onClick={() => toggleBulkHour(h)} className={cn("w-8 h-8 text-xs font-medium rounded", bulkHours.includes(h) ? "bg-blue-500 text-white" : "bg-white text-gray-500 hover:bg-gray-100 border")}>{h.toString().padStart(2, '0')}</button>
-                  ))}
+              <div className="flex items-start gap-2 mb-3">
+                <span className="text-sm text-blue-700 whitespace-nowrap pt-1">Khung giờ:</span>
+                <div className="flex-1">
+                  <div className="flex gap-0.5 flex-wrap">
+                    {Array.from({ length: 48 }, (_, i) => {
+                      const h = Math.floor(i / 2);
+                      const m = (i % 2) * 30;
+                      const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                      return (
+                        <button 
+                          key={slot} 
+                          onClick={() => toggleBulkSlot(slot)} 
+                          className={cn(
+                            "w-12 h-7 text-xs font-medium rounded",
+                            bulkSlots.includes(slot) ? "bg-blue-500 text-white" : "bg-white text-gray-500 hover:bg-gray-100 border"
+                          )}
+                        >
+                          {slot}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-              {selectedCampaigns.length > 0 && bulkHours.length > 0 && (
+              {selectedCampaigns.length > 0 && bulkSlots.length > 0 && (
                 <div className="flex items-center justify-between pt-2 border-t border-blue-200">
                   <span className="text-sm text-blue-700">
-                    {selectedCampaigns.length} chiến dịch × {Math.min(...bulkHours)}:00-{Math.max(...bulkHours)+1}:00
+                    {selectedCampaigns.length} chiến dịch × {bulkSlots[0]} - {(() => {
+                      const lastSlot = bulkSlots[bulkSlots.length - 1];
+                      const [h, m] = lastSlot.split(':').map(Number);
+                      const endM = m + 30;
+                      if (endM >= 60) return `${(h + 1).toString().padStart(2, '0')}:00`;
+                      return `${h.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+                    })()}
                   </span>
                   <Button size="sm" onClick={openBulkDialog} className="bg-blue-600 hover:bg-blue-700">Đặt ngân sách cho tất cả</Button>
                 </div>
@@ -338,16 +600,19 @@ export default function AdsPanel() {
                           <span className={cn("text-[10px] px-1.5 py-0.5 rounded", AD_TYPE_MAP[c.ad_type]?.color)}>{AD_TYPE_MAP[c.ad_type]?.label}</span>
                           {c.status && <span className={cn("text-[10px] px-1.5 py-0.5 rounded", STATUS_MAP[c.status]?.color)}>{STATUS_MAP[c.status]?.label}</span>}
                         </div>
-                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        <p className="text-sm font-medium break-words whitespace-normal leading-tight">{c.name}</p>
                         <p className="text-xs text-gray-400">ID: {c.campaign_id}</p>
                       </div>
                     </div>
                     <div className="flex-1 p-2">
                       <div className="grid grid-cols-24 gap-0.5">
-                        {Array.from({ length: 24 }, (_, h) => {
-                          const hasExisting = hasScheduleAtHour(c.campaign_id, h);
-                          const isInBulkSelection = isSelected && bulkHours.includes(h);
-                          return <div key={h} className={cn("h-8 text-[10px] font-medium rounded flex items-center justify-center", hasExisting ? "bg-green-500 text-white" : isInBulkSelection ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-400")}>{h.toString().padStart(2, '0')}</div>;
+                        {Array.from({ length: 48 }, (_, i) => {
+                          const h = Math.floor(i / 2);
+                          const m = (i % 2) * 30;
+                          const slot = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                          const hasExisting = hasScheduleAtSlot(c.campaign_id, h, m);
+                          const isInBulkSelection = isSelected && bulkSlots.includes(slot);
+                          return <div key={slot} className={cn("h-6 text-[8px] font-medium rounded flex items-center justify-center whitespace-nowrap", hasExisting ? "bg-green-500 text-white" : isInBulkSelection ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-400")}>{slot}</div>;
                         })}
                       </div>
                     </div>
@@ -359,59 +624,26 @@ export default function AdsPanel() {
         )}
         {activeTab === 'saved' && (
           <div className="p-4 overflow-x-auto">
-            {schedules.length === 0 ? <div className="text-center py-12 text-gray-400"><p>Chưa có cấu hình</p></div>
-            : <div className="bg-white rounded-lg border overflow-hidden min-w-[600px]">
-                <div className="grid grid-cols-[minmax(200px,1fr)_70px_110px_110px_50px] gap-3 px-4 py-3 bg-gray-50 border-b text-xs font-medium text-gray-500">
-                  <div>Chiến dịch</div>
-                  <div className="text-center">Loại</div>
-                  <div className="text-center">Khung giờ</div>
-                  <div className="text-right">Ngân sách</div>
-                  <div className="text-center">Xóa</div>
-                </div>
-                <div className="divide-y">
-                  {schedules.map(s => {
-                    const isDaily = s.days_of_week && s.days_of_week.length === 7;
-                    return (
-                      <div key={s.id} className="grid grid-cols-[minmax(200px,1fr)_70px_110px_110px_50px] gap-3 px-4 py-3 items-center hover:bg-gray-50">
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm truncate">{s.campaign_name}</p>
-                          <p className="text-xs text-gray-400">ID: {s.campaign_id}</p>
-                        </div>
-                        <div className="text-center">
-                          <span className={cn("text-xs px-2 py-0.5 rounded capitalize", AD_TYPE_MAP[s.ad_type]?.color || 'bg-gray-100 text-gray-600')}>
-                            {AD_TYPE_MAP[s.ad_type]?.label || s.ad_type}
-                          </span>
-                        </div>
-                        <div className="text-sm text-center whitespace-nowrap">
-                          {s.hour_start.toString().padStart(2, '0')}:00 - {s.hour_end === 24 ? '23:59' : `${s.hour_end.toString().padStart(2, '0')}:00`}
-                        </div>
-                        <div className="text-sm text-right font-medium text-orange-600 whitespace-nowrap">
-                          {formatPrice(s.budget)}
-                        </div>
-                        <div className="flex justify-center">
-                          <button onClick={() => deleteSchedule(s.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded font-medium">X</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>}
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <DataTable
+                columns={scheduleColumns}
+                data={schedules}
+                emptyMessage="Chưa có cấu hình"
+                pageSize={20}
+              />
+            </div>
           </div>
         )}
         {activeTab === 'history' && (
           <div className="p-4">
-            {logs.length === 0 ? <div className="text-center py-12 text-gray-400"><p>Chưa có lịch sử</p></div>
-            : <div className="bg-white rounded-lg border overflow-hidden">
-                <div className="grid grid-cols-[1fr_100px_80px_140px] gap-2 px-4 py-3 bg-gray-50 border-b text-xs font-medium text-gray-500"><div>Chiến dịch</div><div className="text-right">Ngân sách</div><div className="text-center">TT</div><div>Thời gian</div></div>
-                <div className="divide-y">
-                  {logs.map(l => <div key={l.id} className="grid grid-cols-[1fr_100px_80px_140px] gap-2 px-4 py-3 items-center hover:bg-gray-50">
-                    <div><p className="text-sm">{l.campaign_name || 'Campaign ' + l.campaign_id}</p></div>
-                    <div className="text-sm text-right font-medium text-orange-600">{formatPrice(l.new_budget)}</div>
-                    <div className="text-center"><span className={cn("text-xs px-2 py-0.5 rounded-full", l.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>{l.status === 'success' ? 'OK' : 'Lỗi'}</span></div>
-                    <div className="text-xs text-gray-500">{new Date(l.executed_at).toLocaleString('vi-VN')}</div>
-                  </div>)}
-                </div>
-              </div>}
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <DataTable
+                columns={logColumns}
+                data={logs}
+                emptyMessage="Chưa có lịch sử"
+                pageSize={20}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -434,7 +666,15 @@ export default function AdsPanel() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Khung giờ:</p>
-              <p className="font-medium text-orange-600">{bulkHours.length > 0 ? `${Math.min(...bulkHours).toString().padStart(2, '0')}:00 - ${(Math.max(...bulkHours) + 1) === 24 ? '23:59' : `${(Math.max(...bulkHours) + 1).toString().padStart(2, '0')}:00`}` : ''}</p>
+              <p className="font-medium text-orange-600">{bulkSlots.length > 0 ? (() => {
+                const sortedSlots = [...bulkSlots].sort();
+                const firstSlot = sortedSlots[0];
+                const lastSlot = sortedSlots[sortedSlots.length - 1];
+                const [h, m] = lastSlot.split(':').map(Number);
+                const endM = m + 30;
+                const endStr = endM >= 60 ? `${(h + 1).toString().padStart(2, '0')}:00` : `${h.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+                return `${firstSlot} - ${endStr}`;
+              })() : ''}</p>
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Ngân sách (VNĐ) - áp dụng cho tất cả</label>
@@ -447,6 +687,62 @@ export default function AdsPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Schedule Dialog */}
+      <Dialog open={!!editingSchedule} onOpenChange={(open) => !open && setEditingSchedule(null)}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader><DialogTitle>Chỉnh sửa ngân sách</DialogTitle></DialogHeader>
+          {editingSchedule && (
+            <div className="py-4 space-y-3">
+              <div>
+                <p className="text-sm text-gray-600">Chiến dịch:</p>
+                <p className="font-medium">{editingSchedule.campaign_name}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Khung giờ:</p>
+                <p className="font-medium text-orange-600">
+                  {editingSchedule.hour_start.toString().padStart(2, '0')}:{(editingSchedule.minute_start || 0).toString().padStart(2, '0')} - {editingSchedule.hour_end.toString().padStart(2, '0')}:{(editingSchedule.minute_end || 0).toString().padStart(2, '0')}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Ngân sách (VNĐ)</label>
+                <Input 
+                  type="text" 
+                  value={editBudgetValue ? new Intl.NumberFormat('vi-VN').format(Number(editBudgetValue.replace(/\./g, '')) || 0) : ''} 
+                  onChange={e => { const raw = e.target.value.replace(/\./g, '').replace(/\D/g, ''); setEditBudgetValue(raw); }} 
+                  placeholder="Nhập ngân sách" 
+                  autoFocus 
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingSchedule(null)}>Hủy</Button>
+            <Button onClick={saveEditSchedule} disabled={saving} className="bg-blue-600 hover:bg-blue-700">{saving ? 'Đang lưu...' : 'Lưu'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteScheduleId} onOpenChange={(open) => !open && setDeleteScheduleId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn xóa lịch ngân sách này? Hành động này không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => deleteScheduleId && deleteSchedule(deleteScheduleId)}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Xóa
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

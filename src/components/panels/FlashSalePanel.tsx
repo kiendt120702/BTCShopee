@@ -1,23 +1,17 @@
 /**
- * Flash Sale Panel - Sync-First Architecture
+ * Flash Sale Panel - Sync-First Architecture with TanStack Table
  * Đọc từ Supabase DB, sync từ Shopee API chạy ngầm
  */
 
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
+import { ColumnDef } from '@tanstack/react-table';
 import { supabase, getShopUuidFromShopId } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Spinner, LoadingState } from '@/components/ui/spinner';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Spinner } from '@/components/ui/spinner';
+import { DataTable } from '@/components/ui/data-table';
 import {
   Dialog,
   DialogContent,
@@ -75,16 +69,16 @@ interface TimeSlot {
 }
 
 const STATUS_MAP: Record<number, { label: string; color: string; icon: string }> = {
-  0: { label: 'Đã xóa', color: 'bg-gray-100 text-gray-600 border-gray-200', icon: '🗑️' },
-  1: { label: 'Bật', color: 'bg-green-100 text-green-700 border-green-200', icon: '✓' },
-  2: { label: 'Tắt', color: 'bg-yellow-100 text-yellow-700 border-yellow-200', icon: '⏸' },
-  3: { label: 'Từ chối', color: 'bg-red-100 text-red-700 border-red-200', icon: '✗' },
+  0: { label: 'Đã xóa', color: 'bg-slate-100 text-slate-600', icon: '🗑️' },
+  1: { label: 'Bật', color: 'bg-green-100 text-green-700', icon: '✓' },
+  2: { label: 'Tắt', color: 'bg-yellow-100 text-yellow-700', icon: '⏸' },
+  3: { label: 'Từ chối', color: 'bg-red-100 text-red-700', icon: '✗' },
 };
 
 const TYPE_MAP: Record<number, { label: string; color: string; icon: string }> = {
-  1: { label: 'Sắp tới', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: '⏳' },
-  2: { label: 'Đang chạy', color: 'bg-orange-100 text-orange-700 border-orange-200', icon: '🔥' },
-  3: { label: 'Kết thúc', color: 'bg-gray-100 text-gray-600 border-gray-200', icon: '✓' },
+  1: { label: 'Sắp tới', color: 'bg-blue-100 text-blue-700', icon: '⏳' },
+  2: { label: 'Đang chạy', color: 'bg-orange-100 text-orange-700', icon: '🔥' },
+  3: { label: 'Kết thúc', color: 'bg-slate-100 text-slate-600', icon: '✓' },
 };
 
 const TYPE_PRIORITY: Record<number, number> = { 2: 1, 1: 2, 3: 3 };
@@ -97,15 +91,13 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
   const { toast } = useToast();
   const { token, isAuthenticated, user } = useShopeeAuth();
 
-  // Data state - từ Supabase DB
+  // Data state
   const [flashSales, setFlashSales] = useState<FlashSale[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
   // UI state
   const [filterType, setFilterType] = useState<string>('0');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(20);
 
   // Detail modal state
   const [selectedSale, setSelectedSale] = useState<FlashSale | null>(null);
@@ -137,10 +129,7 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
     synced: 0,
   });
 
-  // Expose triggerSync to parent via ref
-  useImperativeHandle(ref, () => ({
-    triggerSync
-  }));
+  useImperativeHandle(ref, () => ({ triggerSync }));
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString('vi-VN', {
@@ -150,17 +139,104 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
 
   const formatPrice = (price: number) => new Intl.NumberFormat('vi-VN').format(price) + 'đ';
 
-  // ============================================
-  // LOAD DATA FROM SUPABASE DB (Sync-First)
-  // ============================================
+  const formatTimeSlot = (startTime: number, endTime: number) => {
+    const start = new Date(startTime * 1000);
+    const end = new Date(endTime * 1000);
+    const dateStr = `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}/${start.getFullYear()}`;
+    const startStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
+    const endStr = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
+    return { dateStr, timeStr: `${startStr} - ${endStr}` };
+  };
+
+  // Table columns definition
+  const columns: ColumnDef<FlashSale>[] = useMemo(() => [
+    {
+      accessorKey: 'start_time',
+      header: 'Ngày',
+      size: 110,
+      cell: ({ row }) => {
+        const { dateStr } = formatTimeSlot(row.original.start_time, row.original.end_time);
+        return <span className="font-medium text-slate-700 whitespace-nowrap">{dateStr}</span>;
+      },
+      sortingFn: (rowA, rowB) => rowA.original.start_time - rowB.original.start_time,
+    },
+    {
+      accessorKey: 'time_range',
+      header: 'Khung giờ',
+      size: 120,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const { timeStr } = formatTimeSlot(row.original.start_time, row.original.end_time);
+        return (
+          <span className="text-slate-600 whitespace-nowrap">
+            {timeStr} {row.original.type === 2 && '🔥'}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'enabled_item_count',
+      header: 'Sản phẩm',
+      size: 100,
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap">
+          <span className="text-orange-500 font-semibold">{row.original.enabled_item_count}</span>
+          <span className="text-slate-400"> / </span>
+          <span className="text-slate-500">{row.original.item_count}</span>
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'type',
+      header: 'Trạng thái',
+      size: 110,
+      cell: ({ row }) => {
+        const typeInfo = TYPE_MAP[row.original.type];
+        return (
+          <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${typeInfo?.color || 'bg-slate-100 text-slate-500'}`}>
+            {typeInfo?.icon} {typeInfo?.label || 'Không xác định'}
+          </span>
+        );
+      },
+      sortingFn: (rowA, rowB) => (TYPE_PRIORITY[rowA.original.type] || 99) - (TYPE_PRIORITY[rowB.original.type] || 99),
+    },
+    {
+      accessorKey: 'click_count',
+      header: 'Clicks',
+      size: 80,
+      cell: ({ row }) => (
+        <span className="text-slate-600 font-medium whitespace-nowrap">{row.original.click_count.toLocaleString()}</span>
+      ),
+    },
+    {
+      accessorKey: 'remindme_count',
+      header: 'Nhắc nhở',
+      size: 80,
+      cell: ({ row }) => (
+        <span className="text-slate-600 whitespace-nowrap">{row.original.remindme_count.toLocaleString()}</span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: '',
+      size: 90,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <button
+          onClick={() => handleOpenCopyDialogForSale(row.original)}
+          className="text-orange-500 hover:text-orange-600 text-sm font-medium hover:underline whitespace-nowrap"
+        >
+          Sao chép
+        </button>
+      ),
+    },
+  ], []);
 
   // Load flash sales từ DB
   const loadFlashSalesFromDB = async () => {
     if (!token?.shop_id) return;
-
     setLoading(true);
     try {
-      // Get the UUID for this shop from the numeric shop_id
       const shopUuid = await getShopUuidFromShopId(token.shop_id);
       if (!shopUuid) {
         console.error('Could not find shop UUID for shop_id:', token.shop_id);
@@ -168,7 +244,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
         return;
       }
 
-      // Load theo shop UUID, không filter user_id để tất cả user có quyền truy cập shop đều thấy
       const { data, error } = await supabase
         .from('apishopee_flash_sale_data')
         .select('*')
@@ -177,11 +252,9 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
 
       if (error) throw error;
 
-      // Sort by type priority: Đang chạy > Sắp tới > Kết thúc
       const sorted = (data || []).sort((a, b) =>
         (TYPE_PRIORITY[a.type] || 99) - (TYPE_PRIORITY[b.type] || 99)
       );
-
       setFlashSales(sorted);
     } catch (err) {
       console.error('Error loading flash sales from DB:', err);
@@ -189,10 +262,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
       setLoading(false);
     }
   };
-
-  // ============================================
-  // TRIGGER SYNC (Gọi Edge Function sync từ Shopee)
-  // ============================================
 
   const triggerSync = async () => {
     if (!token?.shop_id || !user?.id) {
@@ -202,108 +271,53 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
 
     setSyncing(true);
     setShowSyncProgress(true);
-    setSyncProgress({
-      status: 'syncing',
-      message: 'Đang khởi tạo...',
-      total: 0,
-      synced: 0,
-    });
+    setSyncProgress({ status: 'syncing', message: 'Đang khởi tạo...', total: 0, synced: 0 });
 
-    // Subscribe realtime để nhận progress updates
     const progressChannel = supabase
       .channel('sync_progress')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'sync_status',
-          filter: `shop_id=eq.${token.shop_id}`,
-        },
-        (payload: any) => {
-          const progress = payload.new?.sync_progress as SyncProgress | undefined;
-          if (progress) {
-            setSyncProgress({
-              status: progress.is_syncing ? 'syncing' : 'done',
-              message: progress.current_step,
-              total: progress.total_items,
-              synced: progress.processed_items,
-            });
-          }
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'sync_status', filter: `shop_id=eq.${token.shop_id}`,
+      }, (payload: any) => {
+        const progress = payload.new?.sync_progress as SyncProgress | undefined;
+        if (progress) {
+          setSyncProgress({
+            status: progress.is_syncing ? 'syncing' : 'done',
+            message: progress.current_step,
+            total: progress.total_items,
+            synced: progress.processed_items,
+          });
         }
-      )
+      })
       .subscribe();
 
     try {
       const { data, error } = await supabase.functions.invoke('apishopee-sync-worker', {
-        body: {
-          action: 'sync-flash-sale-data',
-          shop_id: token.shop_id,
-          user_id: user.id,
-        },
+        body: { action: 'sync-flash-sale-data', shop_id: token.shop_id, user_id: user.id },
       });
 
-      // Unsubscribe sau khi xong
       supabase.removeChannel(progressChannel);
 
-      if (error) {
-        console.error('Edge function invoke error:', error);
-        throw new Error(error.message || 'Edge Function error');
-      }
+      if (error) throw new Error(error.message || 'Edge Function error');
       if (data?.error || data?.success === false) {
-        console.error('Sync error response:', data);
-        setSyncProgress({
-          status: 'error',
-          message: data.error || 'Unknown error',
-          total: 0,
-          synced: 0,
-        });
-        toast({
-          title: 'Lỗi đồng bộ',
-          description: data.error || 'Không thể đồng bộ dữ liệu',
-          variant: 'destructive',
-        });
+        setSyncProgress({ status: 'error', message: data.error || 'Unknown error', total: 0, synced: 0 });
+        toast({ title: 'Lỗi đồng bộ', description: data.error || 'Không thể đồng bộ dữ liệu', variant: 'destructive' });
         return;
       }
 
       const count = data?.flash_sale_count || 0;
-      setSyncProgress({
-        status: 'done',
-        message: `Hoàn thành! Đã đồng bộ ${count} chương trình Flash Sale`,
-        total: count,
-        synced: count,
-      });
-
-      // Reload data từ DB
+      setSyncProgress({ status: 'done', message: `Hoàn thành! Đã đồng bộ ${count} chương trình Flash Sale`, total: count, synced: count });
       await loadFlashSalesFromDB();
-
     } catch (err) {
       supabase.removeChannel(progressChannel);
-      setSyncProgress({
-        status: 'error',
-        message: (err as Error).message,
-        total: 0,
-        synced: 0,
-      });
+      setSyncProgress({ status: 'error', message: (err as Error).message, total: 0, synced: 0 });
     } finally {
       setSyncing(false);
     }
   };
 
-  // ============================================
-  // LOAD DATA ON MOUNT (Không dùng realtime để tránh reload liên tục)
-  // ============================================
-
   useEffect(() => {
-    if (!token?.shop_id) return;
-
-    // Load initial data
-    loadFlashSalesFromDB();
+    if (token?.shop_id) loadFlashSalesFromDB();
   }, [token?.shop_id]);
-
-  // ============================================
-  // ACTIONS (Vẫn gọi API trực tiếp cho Write operations)
-  // ============================================
 
   const fetchItems = async (flashSaleId: number) => {
     if (!token?.shop_id) return;
@@ -327,31 +341,21 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
     setLoadingTimeSlots(true);
     try {
       const now = Math.floor(Date.now() / 1000) + 60;
-
-      // Get the UUID for this shop
       const shopUuid = await getShopUuidFromShopId(token.shop_id);
 
-      // Fetch timeslots và scheduled flash sales song song
       const [timeSlotsRes, scheduledRes] = await Promise.all([
         supabase.functions.invoke('apishopee-flash-sale', {
           body: { action: 'get-time-slots', shop_id: token.shop_id, start_time: now, end_time: now + 30 * 24 * 60 * 60 },
         }),
-        shopUuid ? supabase
-          .from('apishopee_scheduled_flash_sales')
-          .select('target_timeslot_id')
-          .eq('shop_id', shopUuid)
-          .eq('status', 'pending') : Promise.resolve({ data: null, error: null })
+        shopUuid ? supabase.from('apishopee_scheduled_flash_sales').select('target_timeslot_id').eq('shop_id', shopUuid).eq('status', 'pending') : Promise.resolve({ data: null, error: null })
       ]);
 
       if (timeSlotsRes.error) throw timeSlotsRes.error;
       setTimeSlots(timeSlotsRes.data?.response || []);
 
-      // Tạo Set các timeslot đã có lịch hẹn pending
       const scheduledSet = new Set<number>();
       if (scheduledRes.data) {
-        scheduledRes.data.forEach((s: { target_timeslot_id: number }) => {
-          scheduledSet.add(s.target_timeslot_id);
-        });
+        scheduledRes.data.forEach((s: { target_timeslot_id: number }) => scheduledSet.add(s.target_timeslot_id));
       }
       setScheduledTimeslots(scheduledSet);
     } catch (err) {
@@ -361,17 +365,16 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
     }
   };
 
-  const handleSelectSale = async (sale: FlashSale) => {
+  const handleOpenCopyDialogForSale = (sale: FlashSale) => {
     setSelectedSale(sale);
-    setItemsInfo([]);
-    setModels([]);
-    setShowDetailModal(true);
-    await fetchItems(sale.flash_sale_id);
+    setSelectedTimeSlots([]);
+    setShowCopyDialog(true);
+    fetchItems(sale.flash_sale_id);
+    fetchTimeSlots();
   };
 
   const handleDeleteFlashSale = async () => {
     if (!selectedSale || !token?.shop_id) return;
-
     setDeleting(true);
     try {
       const { data, error } = await supabase.functions.invoke('apishopee-flash-sale', {
@@ -383,8 +386,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
         return;
       }
       toast({ title: 'Thành công', description: 'Đã xóa Flash Sale' });
-
-      // Remove from local state & trigger sync
       setFlashSales(prev => prev.filter(s => s.flash_sale_id !== selectedSale.flash_sale_id));
       setSelectedSale(null);
       setShowDeleteConfirm(false);
@@ -393,14 +394,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
     } finally {
       setDeleting(false);
     }
-  };
-
-  const handleOpenCopyDialog = async () => {
-    if (!selectedSale) return;
-    if (itemsInfo.length === 0) await fetchItems(selectedSale.flash_sale_id);
-    setSelectedTimeSlots([]);
-    setShowCopyDialog(true);
-    fetchTimeSlots();
   };
 
   const handleCopyFlashSale = async () => {
@@ -415,7 +408,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
 
     setCopying(true);
 
-    // Build items to add
     const modelsMap = new Map<number, ModelInfo[]>();
     models.forEach(m => {
       const existing = modelsMap.get(m.item_id) || [];
@@ -454,17 +446,11 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
       return;
     }
 
-    // Schedule mode
     if (copyMode === 'schedule') {
       try {
         const schedules = selectedTimeSlots.map(timeslotId => {
           const slot = timeSlots.find(ts => ts.timeslot_id === timeslotId);
-          return {
-            timeslot_id: timeslotId,
-            start_time: slot?.start_time || 0,
-            end_time: slot?.end_time || 0,
-            items_data: itemsToAdd
-          };
+          return { timeslot_id: timeslotId, start_time: slot?.start_time || 0, end_time: slot?.end_time || 0, items_data: itemsToAdd };
         });
         const { data, error } = await supabase.functions.invoke('apishopee-scheduler', {
           body: { action: 'schedule', shop_id: token.shop_id, source_flash_sale_id: selectedSale?.flash_sale_id, schedules, minutes_before: minutesBefore },
@@ -481,7 +467,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
       return;
     }
 
-    // Copy now mode
     let successCount = 0;
     for (const timeslotId of selectedTimeSlots) {
       try {
@@ -504,39 +489,19 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
     toast({ title: 'Hoàn thành', description: `Copy thành công ${successCount}/${selectedTimeSlots.length} time slots` });
     setShowCopyDialog(false);
     setCopying(false);
-
-    // Trigger sync để cập nhật DB
     triggerSync();
   };
 
   const getModelsForItem = (itemId: number) => models.filter(m => m.item_id === itemId);
 
-  // ============================================
-  // COMPUTED VALUES
-  // ============================================
-
+  // Filtered data
   const filteredSales = filterType === '0' ? flashSales : flashSales.filter(s => s.type === Number(filterType));
-  const totalPages = Math.ceil(filteredSales.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedSales = filteredSales.slice(startIndex, startIndex + itemsPerPage);
-
-  // ============================================
-  // RENDER
-  // ============================================
-
-  const formatTimeSlot = (startTime: number, endTime: number) => {
-    const start = new Date(startTime * 1000);
-    const end = new Date(endTime * 1000);
-    const startStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')} ${String(start.getDate()).padStart(2, '0')}-${String(start.getMonth() + 1).padStart(2, '0')}-${start.getFullYear()}`;
-    const endStr = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
-    return `${startStr} - ${endStr}`;
-  };
 
   const FILTER_TABS = [
-    { value: '0', label: 'Tất cả' },
-    { value: '2', label: 'Đang diễn ra' },
-    { value: '1', label: 'Sắp diễn ra' },
-    { value: '3', label: 'Đã kết thúc' },
+    { value: '0', label: 'Tất cả', count: flashSales.length },
+    { value: '2', label: 'Đang diễn ra', count: flashSales.filter(s => s.type === 2).length },
+    { value: '1', label: 'Sắp diễn ra', count: flashSales.filter(s => s.type === 1).length },
+    { value: '3', label: 'Đã kết thúc', count: flashSales.filter(s => s.type === 3).length },
   ];
 
   return (
@@ -544,17 +509,20 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
       {/* Filter Tabs */}
       <div className="border-b border-gray-200">
         <div className="flex items-center justify-between px-4">
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-1">
             {FILTER_TABS.map((tab) => (
               <button
                 key={tab.value}
-                onClick={() => { setFilterType(tab.value); setCurrentPage(1); }}
-                className={`py-3 text-sm font-medium border-b-2 transition-colors ${filterType === tab.value
+                onClick={() => setFilterType(tab.value)}
+                className={`py-3 px-3 text-sm font-medium border-b-2 transition-colors ${filterType === tab.value
                   ? 'border-orange-500 text-orange-500'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
+                }`}
               >
                 {tab.label}
+                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${filterType === tab.value ? 'bg-orange-100' : 'bg-gray-100'}`}>
+                  {tab.count}
+                </span>
               </button>
             ))}
           </div>
@@ -575,87 +543,24 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
           <div className="h-full flex items-center justify-center">
             <p className="text-gray-500">Vui lòng kết nối Shopee để tiếp tục</p>
           </div>
-        ) : loading ? (
-          <LoadingState text="Đang tải từ database..." color="orange" />
-        ) : paginatedSales.length === 0 ? (
-          <div className="h-full flex items-center justify-center">
-            <p className="text-gray-400">Chưa có khung giờ Flash Sale</p>
-          </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b">
-                <TableHead className="text-gray-600 font-medium py-3">Khung giờ</TableHead>
-                <TableHead className="text-gray-600 font-medium py-3">Sản Phẩm</TableHead>
-                <TableHead className="text-gray-600 font-medium py-3">Trạng thái</TableHead>
-                <TableHead className="text-gray-600 font-medium py-3">Thao tác</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedSales.map((sale) => {
-                const typeInfo = TYPE_MAP[sale.type];
-
-                return (
-                  <TableRow key={sale.id} className="border-b hover:bg-gray-50">
-                    <TableCell className="py-4">
-                      <div className="font-medium text-sm">
-                        {formatTimeSlot(sale.start_time, sale.end_time)}
-                        {sale.type === 2 && <span className="text-orange-500 ml-1">+1</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <div>
-                        <span className="text-orange-500 font-medium">Bật Flash Sale </span>
-                        <span className="text-orange-500">{sale.enabled_item_count}</span>
-                      </div>
-                      <div className="text-sm text-gray-500">Số sản phẩm tham gia {sale.item_count}</div>
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${typeInfo?.color || 'bg-gray-100 text-gray-500'}`}>
-                        <span>{typeInfo?.icon}</span>
-                        {typeInfo?.label || 'Không xác định'}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <button
-                        onClick={() => {
-                          setSelectedSale(sale);
-                          setSelectedTimeSlots([]);
-                          setShowCopyDialog(true);
-                          // Load data in background
-                          fetchItems(sale.flash_sale_id);
-                          fetchTimeSlots();
-                        }}
-                        className="text-blue-500 hover:text-blue-600 text-sm"
-                      >
-                        Sao chép
-                      </button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={columns}
+            data={filteredSales}
+            loading={loading}
+            loadingMessage="Đang tải từ database..."
+            emptyMessage="Chưa có khung giờ Flash Sale"
+            pageSize={20}
+          />
         )}
       </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>←</Button>
-          <span className="text-sm text-gray-500">{currentPage}/{totalPages}</span>
-          <Button variant="outline" size="sm" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}>→</Button>
-        </div>
-      )}
 
       {/* Sync Progress Dialog */}
       <Dialog open={showSyncProgress} onOpenChange={setShowSyncProgress}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {syncProgress.status === 'syncing' && (
-                <Spinner size="sm" color="orange" />
-              )}
+              {syncProgress.status === 'syncing' && <Spinner size="sm" color="orange" />}
               {syncProgress.status === 'done' && (
                 <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -666,53 +571,30 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               )}
-              {syncProgress.status === 'syncing' ? 'Đang đồng bộ...' :
-                syncProgress.status === 'done' ? 'Hoàn tất đồng bộ' : 'Lỗi đồng bộ'}
+              {syncProgress.status === 'syncing' ? 'Đang đồng bộ...' : syncProgress.status === 'done' ? 'Hoàn tất đồng bộ' : 'Lỗi đồng bộ'}
             </DialogTitle>
           </DialogHeader>
-
           <div className="py-4">
-            {/* Progress bar - Real progress */}
             <div className="w-full bg-slate-200 rounded-full h-2.5 mb-4">
               <div
-                className={`h-2.5 rounded-full transition-all duration-500 ${syncProgress.status === 'error' ? 'bg-red-500' : 'bg-green-500'
-                  }`}
-                style={{
-                  width: syncProgress.total > 0
-                    ? `${Math.round((syncProgress.synced / syncProgress.total) * 100)}%`
-                    : syncProgress.status === 'done' ? '100%' : '30%'
-                }}
+                className={`h-2.5 rounded-full transition-all duration-500 ${syncProgress.status === 'error' ? 'bg-red-500' : 'bg-green-500'}`}
+                style={{ width: syncProgress.total > 0 ? `${Math.round((syncProgress.synced / syncProgress.total) * 100)}%` : syncProgress.status === 'done' ? '100%' : '30%' }}
               />
             </div>
-
-            {/* Progress text */}
             {syncProgress.total > 0 && (
               <p className="text-xs text-slate-400 mb-2">
                 {syncProgress.synced}/{syncProgress.total} chương trình ({Math.round((syncProgress.synced / syncProgress.total) * 100)}%)
               </p>
             )}
-
-            {/* Message */}
-            <p className={`text-sm ${syncProgress.status === 'error' ? 'text-red-600' : 'text-slate-600'}`}>
-              {syncProgress.message}
-            </p>
-
-            {/* Stats */}
+            <p className={`text-sm ${syncProgress.status === 'error' ? 'text-red-600' : 'text-slate-600'}`}>{syncProgress.message}</p>
             {syncProgress.status === 'done' && syncProgress.total > 0 && (
               <div className="mt-3 p-3 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-700">
-                  ✓ Đã đồng bộ <span className="font-semibold">{syncProgress.synced}</span> chương trình Flash Sale
-                </p>
+                <p className="text-sm text-green-700">✓ Đã đồng bộ <span className="font-semibold">{syncProgress.synced}</span> chương trình Flash Sale</p>
               </div>
             )}
           </div>
-
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowSyncProgress(false)}
-              disabled={syncProgress.status === 'syncing'}
-            >
+            <Button variant="outline" onClick={() => setShowSyncProgress(false)} disabled={syncProgress.status === 'syncing'}>
               {syncProgress.status === 'syncing' ? 'Đang xử lý...' : 'Đóng'}
             </Button>
           </DialogFooter>
@@ -733,7 +615,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
             </DialogTitle>
             <DialogDescription>Xem thông tin chi tiết và danh sách sản phẩm</DialogDescription>
           </DialogHeader>
-
           {selectedSale && (
             <div className="flex-1 overflow-y-auto space-y-4">
               <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-xl p-4 text-white">
@@ -749,7 +630,6 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
                   </div>
                 </div>
               </div>
-
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-slate-50 rounded-lg p-3 text-center">
                   <p className="text-xl font-bold text-slate-700">{selectedSale.enabled_item_count}/{selectedSale.item_count}</p>
@@ -764,13 +644,10 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
                   <p className="text-xs text-slate-400">Nhắc nhở</p>
                 </div>
               </div>
-
               <div>
                 <h4 className="font-semibold text-slate-700 mb-3">Sản phẩm ({itemsInfo.length})</h4>
                 {loadingItems ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Spinner size="md" color="orange" />
-                  </div>
+                  <div className="flex items-center justify-center py-8"><Spinner size="md" color="orange" /></div>
                 ) : itemsInfo.length === 0 ? (
                   <p className="text-center text-slate-400 py-4">Không có sản phẩm</p>
                 ) : (
@@ -811,9 +688,8 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
               </div>
             </div>
           )}
-
           <DialogFooter className="flex gap-2">
-            <Button variant="outline" onClick={() => { setShowDetailModal(false); handleOpenCopyDialog(); }} className="flex-1">
+            <Button variant="outline" onClick={() => { setShowDetailModal(false); if (selectedSale) handleOpenCopyDialogForSale(selectedSale); }} className="flex-1">
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
@@ -852,14 +728,13 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
 
       {/* Copy Dialog */}
       <Dialog open={showCopyDialog} onOpenChange={setShowCopyDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-md max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Copy Flash Sale sang Time Slot khác</DialogTitle>
             <DialogDescription>Chọn time slot để copy sản phẩm từ Flash Sale này</DialogDescription>
           </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto space-y-4">
-            <div className="flex gap-4 p-3 bg-slate-50 rounded-lg">
+          <div className="flex-1 overflow-y-auto space-y-3">
+            <div className="flex flex-wrap gap-3 p-2 bg-slate-50 rounded-lg">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" checked={copyMode === 'now'} onChange={() => setCopyMode('now')} className="text-orange-500" />
                 <span className="text-sm">Copy ngay</span>
@@ -869,70 +744,57 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
                 <span className="text-sm">Hẹn giờ</span>
               </label>
               {copyMode === 'schedule' && (
-                <div className="flex items-center gap-2 ml-4">
-                  <span className="text-sm text-slate-500">Chạy trước</span>
-                  <input type="number" value={minutesBefore} onChange={e => setMinutesBefore(Number(e.target.value))} className="w-16 px-2 py-1 border rounded text-sm" min={1} />
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500">Trước</span>
+                  <input type="number" value={minutesBefore} onChange={e => setMinutesBefore(Number(e.target.value))} className="w-14 px-2 py-1 border rounded text-sm" min={1} />
                   <span className="text-sm text-slate-500">phút</span>
                 </div>
               )}
             </div>
-
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h4 className="font-medium text-slate-700">Chọn Time Slots ({selectedTimeSlots.length}/{timeSlots.filter(ts => !scheduledTimeslots.has(ts.timeslot_id)).length})</h4>
-                <Button variant="outline" size="sm" onClick={() => {
+                <h4 className="font-medium text-sm text-slate-700">Time Slots ({selectedTimeSlots.length}/{timeSlots.filter(ts => !scheduledTimeslots.has(ts.timeslot_id)).length})</h4>
+                <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => {
                   const availableSlots = timeSlots.filter(ts => !scheduledTimeslots.has(ts.timeslot_id));
                   if (selectedTimeSlots.length === availableSlots.length) setSelectedTimeSlots([]);
                   else setSelectedTimeSlots(availableSlots.map(ts => ts.timeslot_id));
                 }}>
-                  {selectedTimeSlots.length === timeSlots.filter(ts => !scheduledTimeslots.has(ts.timeslot_id)).length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                  {selectedTimeSlots.length === timeSlots.filter(ts => !scheduledTimeslots.has(ts.timeslot_id)).length ? 'Bỏ chọn' : 'Chọn tất cả'}
                 </Button>
               </div>
-
               {loadingTimeSlots ? (
-                <div className="text-center py-8 text-slate-400">Đang tải time slots...</div>
+                <div className="text-center py-6 text-slate-400 text-sm">Đang tải...</div>
               ) : (
-                <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto">
+                <div className="flex flex-col gap-1.5 max-h-[350px] overflow-y-auto">
                   {timeSlots.map(slot => {
                     const startDate = new Date(slot.start_time * 1000);
                     const endDate = new Date(slot.end_time * 1000);
-                    const dayStr = startDate.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' });
+                    const dateStr = startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
                     const startTimeStr = startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
                     const endTimeStr = endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
                     const isScheduled = scheduledTimeslots.has(slot.timeslot_id);
-
                     return (
                       <label
                         key={slot.timeslot_id}
-                        className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${isScheduled
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${isScheduled
                           ? 'border-violet-300 bg-violet-50 cursor-not-allowed opacity-70'
                           : selectedTimeSlots.includes(slot.timeslot_id)
                             ? 'border-orange-500 bg-orange-50 cursor-pointer'
                             : 'border-slate-200 hover:bg-slate-50 cursor-pointer'
-                          }`}
+                        }`}
                       >
                         <Checkbox
                           checked={selectedTimeSlots.includes(slot.timeslot_id)}
                           disabled={isScheduled}
                           onCheckedChange={() => {
                             if (isScheduled) return;
-                            setSelectedTimeSlots(prev =>
-                              prev.includes(slot.timeslot_id)
-                                ? prev.filter(id => id !== slot.timeslot_id)
-                                : [...prev, slot.timeslot_id]
-                            );
+                            setSelectedTimeSlots(prev => prev.includes(slot.timeslot_id) ? prev.filter(id => id !== slot.timeslot_id) : [...prev, slot.timeslot_id]);
                           }}
                         />
-                        <div className="flex-1 flex items-center justify-between">
-                          <span className="font-medium text-sm text-slate-700">{dayStr}</span>
-                          <div className="flex items-center gap-2">
-                            {isScheduled && (
-                              <span className="text-xs px-2 py-0.5 bg-violet-100 text-violet-600 rounded-full font-medium">
-                                ⏰ Đã hẹn giờ
-                              </span>
-                            )}
-                            <span className="text-sm text-slate-500">{startTimeStr} - {endTimeStr}</span>
-                          </div>
+                        <span className="text-sm text-slate-700">{dateStr}</span>
+                        <div className="flex-1 flex items-center justify-end gap-2">
+                          {isScheduled && <span className="text-xs px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-medium">⏰</span>}
+                          <span className="text-sm text-slate-500">{startTimeStr} - {endTimeStr}</span>
                         </div>
                       </label>
                     );
@@ -941,10 +803,9 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
               )}
             </div>
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCopyDialog(false)}>Hủy</Button>
-            <Button onClick={handleCopyFlashSale} disabled={copying || selectedTimeSlots.length === 0} className="bg-gradient-to-r from-orange-500 to-red-500">
+            <Button variant="outline" size="sm" onClick={() => setShowCopyDialog(false)}>Hủy</Button>
+            <Button size="sm" onClick={handleCopyFlashSale} disabled={copying || selectedTimeSlots.length === 0} className="bg-gradient-to-r from-orange-500 to-red-500">
               {copying ? 'Đang xử lý...' : copyMode === 'schedule' ? 'Hẹn giờ' : 'Copy ngay'}
             </Button>
           </DialogFooter>

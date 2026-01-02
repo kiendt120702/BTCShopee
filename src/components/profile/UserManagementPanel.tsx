@@ -82,31 +82,35 @@ export function UserManagementPanel() {
 
   useEffect(() => {
     if (canManageUsers) {
-      loadUsers();
-      loadMyShops();
+      // Chạy song song để tăng tốc loading
+      Promise.all([loadUsers(), loadMyShops()]);
     }
   }, [canManageUsers]);
 
   const loadUsers = async () => {
     setLoading(true);
     try {
-      // Lấy danh sách profiles từ sys_profiles
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('sys_profiles')
-        .select('id, email, full_name, created_at')
-        .order('created_at', { ascending: false });
+      // Chạy 2 query song song để tăng tốc
+      const [profilesResult, profileDeptsResult] = await Promise.all([
+        // Query 1: Lấy danh sách profiles từ sys_profiles
+        supabase
+          .from('sys_profiles')
+          .select('id, email, full_name, created_at')
+          .order('created_at', { ascending: false }),
+        // Query 2: Lấy role của từng user qua sys_profile_departments -> sys_roles
+        supabase
+          .from('sys_profile_departments')
+          .select(`
+            profile_id,
+            sys_roles (name, level)
+          `),
+      ]);
 
-      if (profilesError) throw profilesError;
+      if (profilesResult.error) throw profilesResult.error;
+      if (profileDeptsResult.error) throw profileDeptsResult.error;
 
-      // Lấy role của từng user qua sys_profile_departments -> sys_roles
-      const { data: profileDepts, error: deptError } = await supabase
-        .from('sys_profile_departments')
-        .select(`
-          profile_id,
-          sys_roles (name, level)
-        `);
-
-      if (deptError) throw deptError;
+      const profilesData = profilesResult.data;
+      const profileDepts = profileDeptsResult.data;
 
       // Map role cho từng user (lấy role có level cao nhất nếu có nhiều)
       const roleMap = new Map<string, string>();

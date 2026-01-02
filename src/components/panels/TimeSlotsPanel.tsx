@@ -1,21 +1,16 @@
 /**
  * Time Slots Panel - Component hiển thị trong main content
+ * TanStack Table
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { ColumnDef } from '@tanstack/react-table';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable } from '@/components/ui/data-table';
 
 interface TimeSlot {
   timeslot_id: number;
@@ -49,6 +44,47 @@ export default function TimeSlotsPanel() {
   const dateToTimestamp = (dateStr: string) => {
     return Math.floor(new Date(dateStr).getTime() / 1000);
   };
+
+  // TanStack Table columns
+  const columns: ColumnDef<TimeSlot>[] = useMemo(() => [
+    {
+      accessorKey: 'index',
+      header: '#',
+      size: 50,
+      cell: ({ row }) => <span className="text-slate-500">{row.index + 1}</span>,
+      enableSorting: false,
+    },
+    {
+      accessorKey: 'timeslot_id',
+      header: 'Timeslot ID',
+      size: 130,
+      cell: ({ row }) => (
+        <span className="font-mono text-sm text-slate-600 whitespace-nowrap">{row.original.timeslot_id}</span>
+      ),
+    },
+    {
+      accessorKey: 'start_time',
+      header: 'Bắt đầu',
+      size: 160,
+      cell: ({ row }) => <span className="text-slate-700 whitespace-nowrap">{formatDate(row.original.start_time)}</span>,
+      sortingFn: (rowA, rowB) => rowA.original.start_time - rowB.original.start_time,
+    },
+    {
+      accessorKey: 'end_time',
+      header: 'Kết thúc',
+      size: 160,
+      cell: ({ row }) => <span className="text-slate-700 whitespace-nowrap">{formatDate(row.original.end_time)}</span>,
+    },
+    {
+      accessorKey: 'duration',
+      header: 'Thời lượng',
+      size: 100,
+      cell: ({ row }) => (
+        <span className="text-orange-500 font-medium whitespace-nowrap">{Math.round((row.original.end_time - row.original.start_time) / 60)} phút</span>
+      ),
+      enableSorting: false,
+    },
+  ], []);
 
   const fetchTimeSlots = async () => {
     if (!token?.shop_id) {
@@ -118,38 +154,16 @@ export default function TimeSlotsPanel() {
         </Button>
       </div>
 
-      {timeSlots.length > 0 && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[60px]">#</TableHead>
-                <TableHead>Timeslot ID</TableHead>
-                <TableHead>Start Time</TableHead>
-                <TableHead>End Time</TableHead>
-                <TableHead>Thời lượng</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {timeSlots.map((slot, index) => (
-                <TableRow key={slot.timeslot_id}>
-                  <TableCell>{index + 1}</TableCell>
-                  <TableCell className="font-mono text-sm">{slot.timeslot_id}</TableCell>
-                  <TableCell>{formatDate(slot.start_time)}</TableCell>
-                  <TableCell>{formatDate(slot.end_time)}</TableCell>
-                  <TableCell>{Math.round((slot.end_time - slot.start_time) / 60)} phút</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {timeSlots.length === 0 && !loading && (
-        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-          Chưa có dữ liệu. Vui lòng chọn End Time và nhấn "Lấy Time Slots"
-        </div>
-      )}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <DataTable
+          columns={columns}
+          data={timeSlots}
+          loading={loading}
+          loadingMessage="Đang tải time slots..."
+          emptyMessage="Chưa có dữ liệu. Vui lòng chọn End Time và nhấn 'Lấy Time Slots'"
+          pageSize={20}
+        />
+      </div>
     </div>
   );
 }

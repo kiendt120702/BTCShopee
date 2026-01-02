@@ -296,15 +296,22 @@ export async function saveUserShop(
 // Lấy thông tin shop của user thông qua shop_members
 export async function getUserShops(userId: string) {
   try {
-    // Step 1: Lấy danh sách shop_member của user
+    // Dùng 1 JOIN query thay vì 3 query tuần tự
     const { data: memberData, error: memberError } = await supabase
       .from('apishopee_shop_members')
-      .select('id, shop_id, role_id, is_active')
+      .select(`
+        id, 
+        shop_id, 
+        role_id, 
+        is_active,
+        apishopee_shops(id, shop_id, shop_name, region, shop_logo),
+        apishopee_roles(id, name, display_name)
+      `)
       .eq('profile_id', userId)
       .eq('is_active', true);
 
     if (memberError) {
-      console.error('[getUserShops] Member query error:', memberError);
+      console.error('[getUserShops] Query error:', memberError);
       return [];
     }
 
@@ -313,51 +320,24 @@ export async function getUserShops(userId: string) {
       return [];
     }
 
-    // Step 2: Lấy thông tin shop cho từng membership
-    const shopIds = memberData.map(m => m.shop_id);
-    const { data: shopData, error: shopError } = await supabase
-      .from('apishopee_shops')
-      .select('id, shop_id, shop_name, region, shop_logo')
-      .in('id', shopIds);
+    // Transform data từ JOIN query
+    return memberData
+      .filter(member => member.apishopee_shops) // Filter out items without valid shop
+      .map(member => {
+        const shop = member.apishopee_shops as any;
+        const role = member.apishopee_roles as any || { name: 'member', display_name: 'Member' };
 
-    if (shopError) {
-      console.error('[getUserShops] Shop query error:', shopError);
-      return [];
-    }
-
-    // Step 3: Lấy role info (optional)
-    const roleIds = [...new Set(memberData.map(m => m.role_id).filter(Boolean))];
-    let roleMap = new Map<string, { name: string; display_name: string }>();
-
-    if (roleIds.length > 0) {
-      const { data: roleData } = await supabase
-        .from('apishopee_roles')
-        .select('id, name, display_name')
-        .in('id', roleIds);
-
-      if (roleData) {
-        roleData.forEach(r => roleMap.set(r.id, { name: r.name, display_name: r.display_name }));
-      }
-    }
-
-    // Transform and combine data
-    const shopMap = new Map(shopData?.map(s => [s.id, s]) || []);
-
-    return memberData.map(member => {
-      const shop = shopMap.get(member.shop_id);
-      const role = roleMap.get(member.role_id) || { name: 'member', display_name: 'Member' };
-
-      return {
-        id: shop?.id,
-        shop_id: shop?.shop_id,
-        shop_name: shop?.shop_name || `Shop ${shop?.shop_id}`,
-        region: shop?.region || 'VN',
-        shop_logo: shop?.shop_logo,
-        access_type: 'direct',
-        access_level: role.name,
-        role_display_name: role.display_name,
-      };
-    }).filter(item => item.shop_id); // Filter out items without valid shop
+        return {
+          id: shop?.id,
+          shop_id: shop?.shop_id,
+          shop_name: shop?.shop_name || `Shop ${shop?.shop_id}`,
+          region: shop?.region || 'VN',
+          shop_logo: shop?.shop_logo,
+          access_type: 'direct',
+          access_level: role.name,
+          role_display_name: role.display_name,
+        };
+      });
   } catch (error) {
     console.error('[getUserShops] Error:', error);
     return [];

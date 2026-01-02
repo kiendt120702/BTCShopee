@@ -1,13 +1,14 @@
 "use client";
 
-import ScheduledPanel from "@/components/panels/ScheduledPanel";
+import AccountHealthPanel from "@/components/panels/AccountHealthPanel";
 import { useShopeeAuth } from "@/hooks/useShopeeAuth";
 import ConnectShopBanner from "@/components/shop/ConnectShopBanner";
 
-export default function FlashSaleSchedulePage() {
+export default function AccountHealthPage() {
     const { token, isLoading, login: connectShopee, error: shopeeError } = useShopeeAuth();
     const isShopConnected = !!token?.shop_id;
 
+    // Đợi load xong token trước khi hiển thị
     if (isLoading) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -29,5 +30,5 @@ export default function FlashSaleSchedulePage() {
         );
     }
 
-    return <ScheduledPanel />;
+    return <AccountHealthPanel />;
 }

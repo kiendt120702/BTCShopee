@@ -221,23 +221,28 @@ async function saveToken(
   partnerInfo?: PartnerCredentials
 ) {
   const now = Date.now();
+  const accessTokenExpiredAt = now + (token.expire_in as number) * 1000;
+  
   const shopData: Record<string, unknown> = {
     shop_id: token.shop_id,
     access_token: token.access_token,
     refresh_token: token.refresh_token,
     expire_in: token.expire_in,
-    expired_at: now + (token.expire_in as number) * 1000,
+    expired_at: accessTokenExpiredAt, // Legacy field - access token expiry
+    access_token_expired_at: accessTokenExpiredAt, // Access token expiry
     token_updated_at: new Date().toISOString(),
   };
 
-  // Lưu auth_time (thời điểm ủy quyền) và expire_time (thời hạn ủy quyền) từ Shopee
+  // Lưu auth_time và expire_time từ Shopee API
   // Shopee trả về expire_time là timestamp (giây) khi authorization hết hạn
   if (token.expire_time) {
     shopData.expire_time = token.expire_time;
-    // auth_time = expire_time - authorization_period (thường là 365 ngày = 31536000 giây)
-    // Nếu không có auth_time, tính từ expire_time
-    shopData.auth_time = token.auth_time || Math.floor(now / 1000);
   }
+  if (token.auth_time) {
+    shopData.auth_time = token.auth_time;
+  }
+
+  console.log('[AUTH] Saving token with expire_time:', token.expire_time, 'auth_time:', token.auth_time);
 
   // Thêm partner info nếu có
   if (partnerInfo) {
@@ -342,7 +347,9 @@ serve(async (req) => {
           accessTokenPrefix: token.access_token?.substring(0, 30),
           shopId: token.shop_id,
           expireIn: token.expire_in,
-          expireTime: token.expire_time
+          expireTime: token.expire_time,
+          authTime: token.auth_time,
+          allKeys: Object.keys(token)
         });
 
         if (token.error) {

@@ -1,19 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Pencil, Mail, Shield, Calendar, User, Camera, Loader2 } from 'lucide-react';
+import { Pencil, Mail, Shield, Calendar, User } from 'lucide-react';
 
 export function UserProfileInfo() {
   const { user, profile, updateProfile } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [editing, setEditing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
 
@@ -25,7 +23,7 @@ export function UserProfileInfo() {
     setLoading(true);
     try {
       const { error } = await supabase
-        .from('profiles')
+        .from('sys_profiles')
         .update({
           full_name: fullName.trim() || null,
           updated_at: new Date().toISOString(),
@@ -51,68 +49,6 @@ export function UserProfileInfo() {
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !user?.id) return;
-
-    // Validate file
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: 'Lỗi',
-        description: 'Vui lòng chọn file ảnh',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      toast({
-        title: 'Lỗi',
-        description: 'Ảnh không được vượt quá 2MB',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setUploadingAvatar(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/avatar.${fileExt}`;
-
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName);
-
-      // Update profile - sys_profiles không có avatar_url
-      // TODO: Implement avatar storage separately if needed
-      console.log('Avatar uploaded to:', publicUrl);
-
-      await updateProfile();
-
-      toast({
-        title: 'Thành công',
-        description: 'Đã cập nhật ảnh đại diện',
-      });
-    } catch (error: any) {
-      console.error('Error uploading avatar:', error);
-      toast({
-        title: 'Lỗi',
-        description: error.message || 'Không thể tải ảnh lên',
-        variant: 'destructive',
-      });
-    } finally {
-      setUploadingAvatar(false);
     }
   };
 
@@ -154,32 +90,11 @@ export function UserProfileInfo() {
       </div>
 
       <div className="px-6 pb-6">
-        {/* Avatar */}
+        {/* Avatar - chỉ hiển thị initials, không có upload */}
         <div className="relative -mt-14 mb-4 w-fit">
-          <div className="w-24 h-24 rounded-2xl bg-orange-100 border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
-            {/* sys_profiles không có avatar_url, always show initials */}
+          <div className="w-24 h-24 rounded-2xl bg-orange-100 border-4 border-white shadow-lg flex items-center justify-center">
             <span className="text-2xl font-bold text-orange-500">{initials}</span>
           </div>
-
-          {/* Upload button */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleAvatarUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadingAvatar}
-            className="absolute -bottom-1 -right-1 w-8 h-8 bg-orange-500 hover:bg-orange-600 rounded-lg flex items-center justify-center shadow cursor-pointer transition-colors"
-          >
-            {uploadingAvatar ? (
-              <Loader2 className="w-4 h-4 text-white animate-spin" />
-            ) : (
-              <Camera className="w-4 h-4 text-white" />
-            )}
-          </button>
         </div>
 
         {/* Name & Role */}

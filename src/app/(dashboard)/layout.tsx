@@ -19,6 +19,7 @@ type MenuId =
     | "ads"
     | "ads-budget"
     | "ads-manage"
+    | "account-health"
     | "profile"
     | "profile-info"
     | "profile-users"
@@ -70,6 +71,13 @@ const menuItems: MenuItem[] = [
         description: "Quản lý chiến dịch quảng cáo",
     },
     {
+        id: "account-health",
+        path: "/account-health",
+        label: "Sức khỏe Shop",
+        icon: <HealthIcon />,
+        description: "Theo dõi hiệu suất và vi phạm",
+    },
+    {
         id: "profile",
         path: "/profile",
         label: "Tài khoản",
@@ -82,12 +90,13 @@ const menuItems: MenuItem[] = [
                 label: "Thông tin cá nhân",
                 icon: <UserIcon />,
             },
-            {
-                id: "profile-users",
-                path: "/profile/users",
-                label: "Quản lý User",
-                icon: <UsersIcon />,
-            },
+            // TODO: Tạm ẩn Quản lý User - sẽ bật lại sau
+            // {
+            //     id: "profile-users",
+            //     path: "/profile/users",
+            //     label: "Quản lý User",
+            //     icon: <UsersIcon />,
+            // },
             {
                 id: "profile-shops",
                 path: "/profile/shops",
@@ -178,6 +187,24 @@ function AdsIcon() {
                 strokeLinejoin="round"
                 strokeWidth={2}
                 d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"
+            />
+        </svg>
+    );
+}
+
+function HealthIcon() {
+    return (
+        <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+        >
+            <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
             />
         </svg>
     );
@@ -461,8 +488,12 @@ export default function DashboardLayout({
         return (
             <div className="min-h-screen bg-slate-50 flex items-center justify-center">
                 <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-slate-500">Đang kiểm tra đăng nhập...</p>
+                    <img
+                        src="/logo_betacom.png"
+                        alt="BETACOM"
+                        className="w-24 h-24 mx-auto mb-6 animate-pulse"
+                    />
+                    <h1 className="text-4xl font-bold text-red-500">BETACOM</h1>
                 </div>
             </div>
         );
@@ -472,8 +503,12 @@ export default function DashboardLayout({
         return (
             <div className="min-h-screen bg-slate-50 flex items-center justify-center">
                 <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-slate-500">Đang chuyển hướng...</p>
+                    <img
+                        src="/logo_betacom.png"
+                        alt="BETACOM"
+                        className="w-24 h-24 mx-auto mb-6 animate-pulse"
+                    />
+                    <h1 className="text-4xl font-bold text-red-500">BETACOM</h1>
                 </div>
             </div>
         );

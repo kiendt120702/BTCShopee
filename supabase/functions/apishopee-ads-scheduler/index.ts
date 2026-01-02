@@ -231,7 +231,7 @@ serve(async (req) => {
           });
         }
 
-        const { data, error } = await supabase.from('scheduled_ads_budget').insert({
+        const { data, error } = await supabase.from('apishopee_scheduled_ads_budget').insert({
           shop_id,
           campaign_id,
           campaign_name,
@@ -265,7 +265,7 @@ serve(async (req) => {
         }
 
         const { data, error } = await supabase
-          .from('scheduled_ads_budget')
+          .from('apishopee_scheduled_ads_budget')
           .update(updateData)
           .eq('id', schedule_id)
           .eq('shop_id', shop_id)
@@ -288,7 +288,7 @@ serve(async (req) => {
         const { schedule_id } = params;
 
         const { error } = await supabase
-          .from('scheduled_ads_budget')
+          .from('apishopee_scheduled_ads_budget')
           .delete()
           .eq('id', schedule_id)
           .eq('shop_id', shop_id);
@@ -309,7 +309,7 @@ serve(async (req) => {
         const { campaign_id } = params;
 
         let query = supabase
-          .from('scheduled_ads_budget')
+          .from('apishopee_scheduled_ads_budget')
           .select('*')
           .eq('shop_id', shop_id)
           .order('campaign_id')
@@ -337,7 +337,7 @@ serve(async (req) => {
         const { campaign_id, limit = 50 } = params;
 
         let query = supabase
-          .from('ads_budget_logs')
+          .from('apishopee_ads_budget_logs')
           .select('*')
           .eq('shop_id', shop_id)
           .order('executed_at', { ascending: false })
@@ -361,23 +361,26 @@ serve(async (req) => {
       }
 
 
-      // Xử lý điều chỉnh ngân sách (gọi bởi cron mỗi giờ)
+      // Xử lý điều chỉnh ngân sách (gọi bởi cron mỗi 30 phút)
       case 'process': {
         // Chuyển sang timezone Việt Nam (UTC+7)
         const now = new Date();
         const vnTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
         const currentHour = vnTime.getHours();
+        const currentMinute = vnTime.getMinutes();
         const currentDay = vnTime.getDay(); // 0 = Sunday
+        const currentDateStr = vnTime.toISOString().split('T')[0]; // YYYY-MM-DD
+        
+        // Tính thời gian hiện tại theo phút (từ 0:00)
+        const currentTimeInMinutes = currentHour * 60 + currentMinute;
 
-        console.log(`[PROCESS] Running at VN hour ${currentHour}, day ${currentDay} (UTC: ${now.getUTCHours()})`);
+        console.log(`[PROCESS] Running at VN ${currentHour}:${currentMinute}, day ${currentDay}, date ${currentDateStr} (UTC: ${now.getUTCHours()}:${now.getUTCMinutes()})`);
 
-        // Lấy tất cả cấu hình active phù hợp với giờ hiện tại
+        // Lấy tất cả cấu hình active
         const { data: schedules, error: fetchError } = await supabase
-          .from('scheduled_ads_budget')
+          .from('apishopee_scheduled_ads_budget')
           .select('*')
-          .eq('is_active', true)
-          .lte('hour_start', currentHour)
-          .gt('hour_end', currentHour);
+          .eq('is_active', true);
 
         if (fetchError) {
           console.error('Error fetching schedules:', fetchError);
@@ -386,41 +389,88 @@ serve(async (req) => {
           });
         }
 
-        // Lọc theo ngày trong tuần nếu có cấu hình
+        // Lọc theo thời gian và ngày
         const applicableSchedules = (schedules || []).filter(s => {
-          if (!s.days_of_week || s.days_of_week.length === 0) return true;
-          return s.days_of_week.includes(currentDay);
+          // Tính start và end time theo phút
+          const startMinutes = s.hour_start * 60 + (s.minute_start || 0);
+          const endMinutes = s.hour_end * 60 + (s.minute_end || 0);
+          
+          // Kiểm tra thời gian hiện tại có nằm trong khoảng không
+          if (currentTimeInMinutes < startMinutes || currentTimeInMinutes >= endMinutes) {
+            return false;
+          }
+          
+          // Nếu có specific_dates, chỉ chạy vào những ngày đó
+          if (s.specific_dates && s.specific_dates.length > 0) {
+            return s.specific_dates.includes(currentDateStr);
+          }
+          // Nếu có days_of_week, lọc theo ngày trong tuần
+          if (s.days_of_week && s.days_of_week.length > 0) {
+            return s.days_of_week.includes(currentDay);
+          }
+          // Không có cấu hình ngày -> chạy mỗi ngày
+          return true;
         });
 
         console.log(`[PROCESS] Found ${applicableSchedules.length} applicable schedules`);
 
+        // Lấy logs trong 25 phút gần đây để tránh duplicate
+        const twentyFiveMinutesAgo = new Date(Date.now() - 25 * 60 * 1000).toISOString();
+        const { data: recentLogs } = await supabase
+          .from('apishopee_ads_budget_logs')
+          .select('schedule_id')
+          .gte('executed_at', twentyFiveMinutesAgo)
+          .eq('status', 'success');
+        
+        const recentlyExecutedScheduleIds = new Set((recentLogs || []).map(l => l.schedule_id));
+
+        // Lọc bỏ các schedule đã chạy gần đây
+        const schedulesToRun = applicableSchedules.filter(s => !recentlyExecutedScheduleIds.has(s.id));
+        
+        console.log(`[PROCESS] After dedup: ${schedulesToRun.length} schedules to run (${applicableSchedules.length - schedulesToRun.length} skipped)`);
+
         const results = [];
 
-        // Nhóm theo shop_id để xử lý
-        const byShop = new Map<number, typeof applicableSchedules>();
-        for (const schedule of applicableSchedules) {
+        // Nhóm theo shop_id (UUID) để xử lý
+        const byShop = new Map<string, typeof schedulesToRun>();
+        for (const schedule of schedulesToRun) {
           const list = byShop.get(schedule.shop_id) || [];
           list.push(schedule);
           byShop.set(schedule.shop_id, list);
         }
 
-        for (const [shopId, shopSchedules] of byShop) {
+        for (const [shopUuid, shopSchedules] of byShop) {
+          // Lấy numeric shop_id từ UUID
+          const { data: shopData, error: shopError } = await supabase
+            .from('apishopee_shops')
+            .select('shop_id')
+            .eq('id', shopUuid)
+            .single();
+
+          if (shopError || !shopData?.shop_id) {
+            console.error(`[PROCESS] Shop not found for UUID ${shopUuid}`);
+            continue;
+          }
+
+          const numericShopId = shopData.shop_id;
+
           for (const schedule of shopSchedules) {
             try {
               console.log(`[PROCESS] Updating campaign ${schedule.campaign_id} to budget ${schedule.budget}`);
 
               const result = await editCampaignBudget(
                 supabase,
-                shopId,
+                numericShopId,
                 schedule.campaign_id,
                 schedule.ad_type,
                 schedule.budget
               );
 
               // Log kết quả
-              await supabase.from('ads_budget_logs').insert({
-                shop_id: shopId,
+              await supabase.from('apishopee_ads_budget_logs').insert({
+                shop_id: shopUuid,
                 campaign_id: schedule.campaign_id,
+                campaign_name: schedule.campaign_name,
                 schedule_id: schedule.id,
                 new_budget: schedule.budget,
                 status: result.success ? 'success' : 'failed',
@@ -437,9 +487,10 @@ serve(async (req) => {
             } catch (err) {
               console.error(`[PROCESS] Error for campaign ${schedule.campaign_id}:`, err);
 
-              await supabase.from('ads_budget_logs').insert({
-                shop_id: shopId,
+              await supabase.from('apishopee_ads_budget_logs').insert({
+                shop_id: shopUuid,
                 campaign_id: schedule.campaign_id,
+                campaign_name: schedule.campaign_name,
                 schedule_id: schedule.id,
                 new_budget: schedule.budget,
                 status: 'failed',
@@ -473,7 +524,7 @@ serve(async (req) => {
         const { schedule_id } = params;
 
         const { data: schedule, error: fetchError } = await supabase
-          .from('scheduled_ads_budget')
+          .from('apishopee_scheduled_ads_budget')
           .select('*')
           .eq('id', schedule_id)
           .eq('shop_id', shop_id)
@@ -485,18 +536,32 @@ serve(async (req) => {
           });
         }
 
+        // Lấy numeric shop_id từ UUID
+        const { data: shopData, error: shopError } = await supabase
+          .from('apishopee_shops')
+          .select('shop_id')
+          .eq('id', shop_id)
+          .single();
+
+        if (shopError || !shopData?.shop_id) {
+          return new Response(JSON.stringify({ error: 'Shop not found' }), {
+            status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         const result = await editCampaignBudget(
           supabase,
-          shop_id,
+          shopData.shop_id,
           schedule.campaign_id,
           schedule.ad_type,
           schedule.budget
         );
 
         // Log kết quả
-        await supabase.from('ads_budget_logs').insert({
+        await supabase.from('apishopee_ads_budget_logs').insert({
           shop_id,
           campaign_id: schedule.campaign_id,
+          campaign_name: schedule.campaign_name,
           schedule_id: schedule.id,
           new_budget: schedule.budget,
           status: result.success ? 'success' : 'failed',

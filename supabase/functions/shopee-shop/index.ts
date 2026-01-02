@@ -209,7 +209,7 @@ async function callShopeeAPIWithRetry(
 
     if (!newToken.error) {
       await saveToken(supabase, shopId, newToken);
-      
+
       // Cập nhật bảng shops
       await supabase.from('apishopee_shops').upsert({
         shop_id: shopId,
@@ -218,7 +218,7 @@ async function callShopeeAPIWithRetry(
         expired_at: Date.now() + newToken.expire_in * 1000,
         token_updated_at: new Date().toISOString(),
       }, { onConflict: 'shop_id' });
-      
+
       result = await makeRequest(newToken.access_token);
     }
   }
@@ -272,7 +272,7 @@ async function getCachedShopInfo(
   // Kiểm tra cache còn hạn không (dựa vào updated_at)
   const updatedAt = new Date(data.updated_at).getTime();
   const now = Date.now();
-  
+
   // Chỉ dùng cache nếu đã có shop_name và cache chưa quá 30 phút
   if (!data.shop_name || (now - updatedAt > CACHE_TTL_MS)) {
     console.log('[CACHE] Cache expired or no shop_name for shop:', shopId);
@@ -293,11 +293,11 @@ async function saveShopInfoCache(
   const shopLogo = (shopProfile.response as Record<string, unknown>)?.shop_logo as string || null;
   const region = shopInfo.region as string || null;
   const description = (shopProfile.response as Record<string, unknown>)?.description as string || null;
-  
+
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
-  
+
   // Cập nhật tất cả thông tin shop vào bảng shops
   if (shopName) updateData.shop_name = shopName;
   if (shopLogo) updateData.shop_logo = shopLogo;
@@ -411,7 +411,7 @@ serve(async (req) => {
         // Cache miss hoặc force refresh -> gọi API
         const credentials = await getPartnerCredentials(supabase, shop_id);
         const token = await getTokenWithAutoRefresh(supabase, shop_id);
-        
+
         const [shopInfo, shopProfile] = await Promise.all([
           callShopeeAPIWithRetry(supabase, credentials, '/api/v2/shop/get_shop_info', 'GET', shop_id, token),
           callShopeeAPIWithRetry(supabase, credentials, '/api/v2/shop/get_profile', 'GET', shop_id, token),
@@ -420,7 +420,7 @@ serve(async (req) => {
         // Lưu cache nếu không có lỗi
         const infoResult = shopInfo as Record<string, unknown>;
         const profileResult = shopProfile as Record<string, unknown>;
-        
+
         if (!infoResult.error) {
           await saveShopInfoCache(supabase, shop_id, infoResult, profileResult);
         }
@@ -465,7 +465,7 @@ serve(async (req) => {
         const { cursor, page_size } = body;
         const credentials = await getPartnerCredentials(supabase, shop_id);
         const token = await getTokenWithAutoRefresh(supabase, shop_id);
-        
+
         const extraParams: Record<string, number> = {};
         if (cursor !== undefined && cursor !== null) {
           extraParams.cursor = cursor;

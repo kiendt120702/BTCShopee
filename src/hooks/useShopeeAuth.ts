@@ -85,57 +85,55 @@ export function useShopeeAuth(): UseShopeeAuthReturn {
         }
       }
 
-      // 2. Luôn load danh sách shops từ database
+      // 2. Load danh sách shops từ database (đã được tối ưu với JOIN query)
       if (userId) {
         console.log('[AUTH] Checking database for user:', userId);
 
-        // Lấy danh sách shop của user
+        // getUserShops đã trả về đầy đủ thông tin shop
         const userShops = await getUserShops(userId);
         console.log('[AUTH] User shops from database:', userShops);
 
         if (userShops && userShops.length > 0) {
-          // Lấy thông tin chi tiết các shop
-          const shopIds = userShops.map((s: { shop_id: number }) => s.shop_id);
-          const { data: shopsData } = await supabase
-            .from('apishopee_shops')
-            .select('id, shop_id, shop_name, shop_logo, region, access_token, refresh_token, expired_at, merchant_id')
-            .in('shop_id', shopIds);
+          // Cập nhật danh sách shops từ kết quả getUserShops
+          const shopInfoList: ShopInfo[] = userShops.map((shop: any) => ({
+            shop_id: shop.shop_id,
+            shop_name: shop.shop_name,
+            shop_logo: shop.shop_logo,
+            region: shop.region,
+            is_active: true
+          }));
+          setShops(shopInfoList);
 
-          if (shopsData && shopsData.length > 0) {
-            // Cập nhật danh sách shops
-            const shopInfoList: ShopInfo[] = shopsData.map(shop => ({
-              shop_id: shop.shop_id,
-              shop_name: shop.shop_name,
-              shop_logo: shop.shop_logo,
-              region: shop.region,
-              is_active: true
-            }));
-            setShops(shopInfoList);
+          // Nếu đã load token từ localStorage, không cần load lại
+          if (tokenLoaded) {
+            return true;
+          }
 
-            // Nếu đã load token từ localStorage, không cần load lại
-            if (tokenLoaded) {
-              return true;
-            }
+          // Chọn shop: ưu tiên targetShopId, sau đó localStorage, cuối cùng là shop đầu tiên
+          const shopToLoadId = targetShopId || localShopId || userShops[0]?.shop_id;
+          
+          if (shopToLoadId) {
+            // Chỉ query token khi cần (không có trong localStorage)
+            const { data: shopData } = await supabase
+              .from('apishopee_shops')
+              .select('shop_id, access_token, refresh_token, expired_at, merchant_id')
+              .eq('shop_id', shopToLoadId)
+              .single();
 
-            // Chọn shop: ưu tiên targetShopId, sau đó localStorage, cuối cùng là shop đầu tiên
-            const shopToLoad = targetShopId
-              ? shopsData.find(s => s.shop_id === targetShopId)
-              : (localShopId ? shopsData.find(s => s.shop_id === localShopId) : shopsData[0]);
-
-            if (shopToLoad && shopToLoad.access_token) {
+            if (shopData?.access_token) {
               const dbToken: AccessToken = {
-                access_token: shopToLoad.access_token,
-                refresh_token: shopToLoad.refresh_token,
-                shop_id: shopToLoad.shop_id,
-                expired_at: shopToLoad.expired_at,
+                access_token: shopData.access_token,
+                refresh_token: shopData.refresh_token,
+                shop_id: shopData.shop_id,
+                expired_at: shopData.expired_at,
                 expire_in: 14400,
-                merchant_id: shopToLoad.merchant_id,
+                merchant_id: shopData.merchant_id,
               };
 
               await storeToken(dbToken);
               setToken(dbToken);
-              setSelectedShopId(shopToLoad.shop_id);
-              console.log('[AUTH] Token restored from shops table, shop_id:', shopToLoad.shop_id);
+              setSelectedShopId(shopData.shop_id);
+              console.log('[AUTH] Token restored from shops table, shop_id:', shopData.shop_id);
               return true;
             }
           }
