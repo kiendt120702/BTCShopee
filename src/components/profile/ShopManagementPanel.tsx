@@ -58,20 +58,10 @@ export function ShopManagementPanel() {
 
   // Connect new shop dialog
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
-  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
   const [partnerIdInput, setPartnerIdInput] = useState('');
   const [partnerKeyInput, setPartnerKeyInput] = useState('');
   const [partnerNameInput, setPartnerNameInput] = useState('');
   const [connecting, setConnecting] = useState(false);
-
-  // Platform options
-  const platforms = [
-    { id: 'shopee', name: 'Shopee', icon: '🛒', color: 'bg-orange-500', available: true },
-    { id: 'tiktok', name: 'TikTok Shop', icon: '🎵', color: 'bg-black', available: false },
-    { id: 'facebook', name: 'Facebook', icon: '📘', color: 'bg-blue-600', available: false },
-    { id: 'nhanh', name: 'Nhanh.vn', icon: '⚡', color: 'bg-green-500', available: false },
-    { id: 'lazada', name: 'Lazada', icon: '🛍️', color: 'bg-blue-500', available: false },
-  ];
 
   const loadShops = async () => {
     if (!user?.id) return;
@@ -305,22 +295,10 @@ export function ShopManagementPanel() {
 
   const handleConnectNewShop = async () => {
     // Reset state và mở dialog
-    setSelectedPlatform(null);
     setPartnerIdInput('');
     setPartnerKeyInput('');
     setPartnerNameInput('');
     setConnectDialogOpen(true);
-  };
-
-  const handleSelectPlatform = (platformId: string) => {
-    const platform = platforms.find(p => p.id === platformId);
-    if (platform?.available) {
-      setSelectedPlatform(platformId);
-    }
-  };
-
-  const handleBackToPlatformSelect = () => {
-    setSelectedPlatform(null);
   };
 
   const handleSubmitConnect = async () => {
@@ -568,129 +546,64 @@ export function ShopManagementPanel() {
 
       {/* Connect New Shop Dialog */}
       <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>
-              {selectedPlatform ? (
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={handleBackToPlatformSelect}
-                    className="p-1 hover:bg-slate-100 rounded-full transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  Kết nối {platforms.find(p => p.id === selectedPlatform)?.name}
-                </div>
-              ) : (
-                'Kết nối Shop mới'
-              )}
-            </DialogTitle>
+            <DialogTitle>Kết nối Shop mới</DialogTitle>
             <DialogDescription>
-              {selectedPlatform 
-                ? `Nhập thông tin để kết nối với ${platforms.find(p => p.id === selectedPlatform)?.name}`
-                : 'Chọn nền tảng bạn muốn kết nối'
-              }
+              Nhập thông tin Partner từ Shopee Open Platform để kết nối shop.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Step 1: Platform Selection */}
-          {!selectedPlatform && (
-            <div className="py-4">
-              <div className="grid grid-cols-2 gap-3">
-                {platforms.map((platform) => (
-                  <button
-                    key={platform.id}
-                    onClick={() => handleSelectPlatform(platform.id)}
-                    disabled={!platform.available}
-                    className={`
-                      relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all
-                      ${platform.available 
-                        ? 'border-slate-200 hover:border-orange-400 hover:bg-orange-50 cursor-pointer' 
-                        : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'
-                      }
-                    `}
-                  >
-                    <div className={`w-12 h-12 ${platform.color} rounded-xl flex items-center justify-center text-2xl text-white`}>
-                      {platform.icon}
-                    </div>
-                    <span className="font-medium text-slate-700">{platform.name}</span>
-                    {!platform.available && (
-                      <span className="absolute top-2 right-2 text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">
-                        Sắp ra mắt
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="partner_id">Partner ID <span className="text-red-500">*</span></Label>
+              <Input
+                id="partner_id"
+                type="number"
+                placeholder="Nhập Partner ID"
+                value={partnerIdInput}
+                onChange={(e) => setPartnerIdInput(e.target.value)}
+              />
             </div>
-          )}
-
-          {/* Step 2: Platform-specific form */}
-          {selectedPlatform === 'shopee' && (
-            <>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="partner_id">Partner ID <span className="text-red-500">*</span></Label>
-                  <Input
-                    id="partner_id"
-                    type="number"
-                    placeholder="Nhập Partner ID"
-                    value={partnerIdInput}
-                    onChange={(e) => setPartnerIdInput(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="partner_key">Partner Key <span className="text-red-500">*</span></Label>
-                  <Input
-                    id="partner_key"
-                    type="password"
-                    placeholder="Nhập Partner Key"
-                    value={partnerKeyInput}
-                    onChange={(e) => setPartnerKeyInput(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="partner_name">Tên Partner (tùy chọn)</Label>
-                  <Input
-                    id="partner_name"
-                    placeholder="VD: My App Partner"
-                    value={partnerNameInput}
-                    onChange={(e) => setPartnerNameInput(e.target.value)}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setConnectDialogOpen(false)}>
-                  Hủy
-                </Button>
-                <Button
-                  className="bg-orange-500 hover:bg-orange-600"
-                  onClick={handleSubmitConnect}
-                  disabled={connecting || !partnerIdInput || !partnerKeyInput}
-                >
-                  {connecting ? (
-                    <>
-                      <Spinner size="sm" className="mr-2" />
-                      Đang kết nối...
-                    </>
-                  ) : (
-                    'Kết nối với Shopee'
-                  )}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-
-          {/* Footer for platform selection step */}
-          {!selectedPlatform && (
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setConnectDialogOpen(false)}>
-                Hủy
-              </Button>
-            </DialogFooter>
-          )}
+            <div className="space-y-2">
+              <Label htmlFor="partner_key">Partner Key <span className="text-red-500">*</span></Label>
+              <Input
+                id="partner_key"
+                type="password"
+                placeholder="Nhập Partner Key"
+                value={partnerKeyInput}
+                onChange={(e) => setPartnerKeyInput(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="partner_name">Tên Partner (tùy chọn)</Label>
+              <Input
+                id="partner_name"
+                placeholder="VD: My App Partner"
+                value={partnerNameInput}
+                onChange={(e) => setPartnerNameInput(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConnectDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="bg-orange-500 hover:bg-orange-600"
+              onClick={handleSubmitConnect}
+              disabled={connecting || !partnerIdInput || !partnerKeyInput}
+            >
+              {connecting ? (
+                <>
+                  <Spinner size="sm" className="mr-2" />
+                  Đang kết nối...
+                </>
+              ) : (
+                'Kết nối với Shopee'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
