@@ -282,6 +282,10 @@ serve(async (req) => {
 
       case 'get-item-list': {
         // Lấy danh sách item_id của shop
+        // item_status là array: ["NORMAL"] hoặc ["NORMAL", "BANNED"]
+        const itemStatus = params.item_status || ['NORMAL'];
+        const statusArray = Array.isArray(itemStatus) ? itemStatus : [itemStatus];
+        
         result = await callShopeeAPIWithRetry(
           supabase,
           credentials,
@@ -292,8 +296,8 @@ serve(async (req) => {
           undefined,
           {
             offset: params.offset ?? 0,
-            page_size: params.page_size ?? 20,
-            item_status: params.item_status || 'NORMAL',
+            page_size: params.page_size ?? 100,
+            item_status: statusArray.join(','),
           }
         );
         break;

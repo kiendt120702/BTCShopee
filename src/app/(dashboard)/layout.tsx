@@ -273,7 +273,7 @@ function ShopSelector() {
     const currentShop =
         shops.find((s) => s.shop_id === selectedShopId) ||
         (token?.shop_id
-            ? { shop_id: token.shop_id, shop_name: `Shop ${token.shop_id}`, region: "VN" }
+            ? { shop_id: token.shop_id, shop_name: `Shop ${token.shop_id}`, region: "VN", shop_logo: null }
             : null);
 
     if (!currentShop) return null;
@@ -287,7 +287,7 @@ function ShopSelector() {
     };
 
     return (
-        <div className="relative">
+        <div className="relative z-50">
             <button
                 onClick={() => setOpen(!open)}
                 disabled={isLoading || shops.length <= 1}
@@ -298,20 +298,28 @@ function ShopSelector() {
                         : "bg-slate-50 border-slate-200 cursor-default"
                 )}
             >
-                <div className="w-6 h-6 bg-orange-100 rounded flex items-center justify-center">
-                    <svg
-                        className="w-4 h-4 text-orange-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                <div className="w-6 h-6 bg-orange-100 rounded flex items-center justify-center overflow-hidden">
+                    {currentShop.shop_logo ? (
+                        <img 
+                            src={currentShop.shop_logo} 
+                            alt={currentShop.shop_name || ''} 
+                            className="w-full h-full object-cover"
                         />
-                    </svg>
+                    ) : (
+                        <svg
+                            className="w-4 h-4 text-orange-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                            />
+                        </svg>
+                    )}
                 </div>
                 <div className="text-left">
                     <p className="text-sm font-medium text-slate-700 max-w-[150px] truncate">
@@ -341,8 +349,8 @@ function ShopSelector() {
             {/* Dropdown */}
             {open && shops.length > 1 && (
                 <>
-                    <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-20 max-h-80 overflow-auto">
+                    <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-50 max-h-80 overflow-auto">
                         <p className="px-3 py-1 text-xs text-slate-400 font-medium">
                             Chọn shop
                         </p>
@@ -351,24 +359,34 @@ function ShopSelector() {
                                 key={shop.shop_id}
                                 onClick={() => handleSwitchShop(shop.shop_id)}
                                 className={cn(
-                                    "w-full px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-3",
-                                    shop.shop_id === selectedShopId && "bg-orange-50"
+                                    "w-full px-3 py-2 text-left flex items-center gap-3",
+                                    shop.shop_id === selectedShopId 
+                                        ? "bg-orange-50" 
+                                        : "hover:bg-slate-50"
                                 )}
                             >
-                                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                    <svg
-                                        className="w-4 h-4 text-orange-600"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                    {shop.shop_logo ? (
+                                        <img 
+                                            src={shop.shop_logo} 
+                                            alt={shop.shop_name || ''} 
+                                            className="w-full h-full object-cover"
                                         />
-                                    </svg>
+                                    ) : (
+                                        <svg
+                                            className="w-4 h-4 text-orange-600"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                                            />
+                                        </svg>
+                                    )}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-slate-700 truncate">
@@ -754,7 +772,7 @@ export default function DashboardLayout({
                 {/* Main Content */}
                 <main className="flex-1 overflow-auto">
                     {/* Header */}
-                    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10">
+                    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-30">
                         <div>
                             <h2 className="font-semibold text-slate-800">
                                 {allMenuItems.find((m) => m.id === activeMenu)?.label ||

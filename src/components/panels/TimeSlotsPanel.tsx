@@ -114,8 +114,10 @@ export default function TimeSlotsPanel() {
         return;
       }
 
-      setTimeSlots(data?.response || []);
-      toast({ title: 'Thành công', description: `Tìm thấy ${data?.response?.length || 0} time slots` });
+      // Shopee API trả về { response: { time_slot_id: [...] } }
+      const timeSlotsData = data?.response?.time_slot_id || data?.response || [];
+      setTimeSlots(timeSlotsData);
+      toast({ title: 'Thành công', description: `Tìm thấy ${timeSlotsData.length || 0} time slots` });
     } catch (err) {
       toast({ title: 'Lỗi', description: (err as Error).message, variant: 'destructive' });
     } finally {

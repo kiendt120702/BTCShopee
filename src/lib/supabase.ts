@@ -38,7 +38,43 @@ export function isSupabaseConfigured(): boolean {
 }
 
 // Cache for shop UUID lookups to avoid repeated queries
-const shopUuidCache = new Map<number, string>();
+// With TTL (5 minutes) and max size (100 entries) to prevent memory leaks
+interface CacheEntry {
+  value: string;
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 100;
+const shopUuidCache = new Map<number, CacheEntry>();
+
+/**
+ * Clean expired entries from cache
+ */
+function cleanExpiredCacheEntries(): void {
+  const now = Date.now();
+  for (const [key, entry] of shopUuidCache.entries()) {
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      shopUuidCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Ensure cache doesn't exceed max size (LRU-like: remove oldest entries)
+ */
+function ensureCacheSize(): void {
+  if (shopUuidCache.size >= CACHE_MAX_SIZE) {
+    // Remove oldest 20% of entries
+    const entriesToRemove = Math.ceil(CACHE_MAX_SIZE * 0.2);
+    const sortedEntries = [...shopUuidCache.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    for (let i = 0; i < entriesToRemove && i < sortedEntries.length; i++) {
+      shopUuidCache.delete(sortedEntries[i][0]);
+    }
+  }
+}
 
 /**
  * Get the UUID (id) of a shop from its numeric Shopee shop_id
@@ -46,9 +82,13 @@ const shopUuidCache = new Map<number, string>();
  * but token.shop_id is the numeric Shopee shop ID
  */
 export async function getShopUuidFromShopId(shopId: number): Promise<string | null> {
+  // Clean expired entries periodically
+  cleanExpiredCacheEntries();
+  
   // Check cache first
-  if (shopUuidCache.has(shopId)) {
-    return shopUuidCache.get(shopId) || null;
+  const cached = shopUuidCache.get(shopId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.value;
   }
 
   try {
@@ -63,8 +103,15 @@ export async function getShopUuidFromShopId(shopId: number): Promise<string | nu
       return null;
     }
 
-    // Cache the result
-    shopUuidCache.set(shopId, data.id);
+    // Ensure cache size before adding
+    ensureCacheSize();
+    
+    // Cache the result with timestamp
+    shopUuidCache.set(shopId, {
+      value: data.id,
+      timestamp: Date.now()
+    });
+    
     return data.id;
   } catch (err) {
     console.error('[Supabase] Error getting shop UUID:', err);

@@ -3,9 +3,21 @@
  * Quản lý Ads API với Auto-Refresh Token
  * Hỗ trợ multi-partner: lấy credentials từ database
  * 
- * Endpoints:
- * - get_product_level_campaign_id_list: Lấy danh sách campaign IDs
- * - get_product_level_campaign_setting_info: Lấy thông tin chi tiết campaign
+ * Actions:
+ * - get-campaign-id-list: Lấy danh sách campaign IDs
+ * - get-campaign-setting-info: Lấy thông tin chi tiết campaign
+ * - edit-manual-product-ads: Chỉnh sửa Manual Ads (budget, status)
+ * - edit-auto-product-ads: Chỉnh sửa Auto Ads (budget, status)
+ * - get-hourly-performance: Hiệu suất tổng theo giờ
+ * - get-daily-performance: Hiệu suất tổng theo ngày
+ * - get-campaign-daily-performance: Hiệu suất từng campaign theo ngày
+ * - get-campaign-hourly-performance: Hiệu suất từng campaign theo giờ
+ * - get-recommended-keywords: Lấy từ khóa đề xuất cho sản phẩm (có input_keyword filter)
+ * - get-keyword-history: Lấy lịch sử tra cứu từ khóa
+ * - delete-keyword-history: Xóa một mục lịch sử
+ * - get-total-balance: Lấy số dư tài khoản quảng cáo
+ * - get-shop-toggle-info: Lấy thông tin bật/tắt quảng cáo
+ * - get-recommended-items: Lấy sản phẩm đề xuất cho quảng cáo
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -156,6 +168,18 @@ async function getTokenWithAutoRefresh(
 
   // Token not found after schema consolidation
   throw new Error('Token not found. Please authenticate first.');
+}
+
+async function getShopUuid(
+  supabase: ReturnType<typeof createClient>,
+  shopId: number
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('apishopee_shops')
+    .select('id')
+    .eq('shop_id', shopId)
+    .single();
+  return data?.id || null;
 }
 
 async function callShopeeAPIWithRetry(
@@ -387,6 +411,265 @@ serve(async (req) => {
           shop_id,
           token,
           autoBody
+        );
+        break;
+      }
+
+      case 'get-hourly-performance': {
+        // Lấy hiệu suất tổng theo giờ (get_all_cpc_ads_hourly_performance)
+        // Required: performance_date (format: YYYY-MM-DD)
+        // Optional: placement (1: Search, 2: Discovery, 3: All - default)
+        const perfDate = params.performance_date || params.date;
+        if (!perfDate) {
+          return new Response(JSON.stringify({ error: 'performance_date is required (format: YYYY-MM-DD)' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_all_cpc_ads_hourly_performance',
+          'GET',
+          shop_id,
+          token,
+          undefined,
+          {
+            performance_date: perfDate,
+            ...(params.placement !== undefined && { placement: params.placement }),
+          }
+        );
+        break;
+      }
+
+      case 'get-daily-performance': {
+        // Lấy hiệu suất tổng theo ngày (get_all_cpc_ads_daily_performance)
+        // Required: start_performance_date, end_performance_date (format: YYYY-MM-DD)
+        // Optional: placement (1: Search, 2: Discovery, 3: All - default)
+        const startDate = params.start_performance_date || params.start_date;
+        const endDate = params.end_performance_date || params.end_date;
+        if (!startDate || !endDate) {
+          return new Response(JSON.stringify({ error: 'start_performance_date and end_performance_date are required (format: YYYY-MM-DD)' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_all_cpc_ads_daily_performance',
+          'GET',
+          shop_id,
+          token,
+          undefined,
+          {
+            start_performance_date: startDate,
+            end_performance_date: endDate,
+            ...(params.placement !== undefined && { placement: params.placement }),
+          }
+        );
+        break;
+      }
+
+      case 'get-campaign-daily-performance': {
+        // Lấy hiệu suất từng campaign theo ngày (get_product_campaign_daily_performance)
+        // Required: campaign_id_list (comma separated, max 100), start_performance_date, end_performance_date
+        // Optional: placement (1: Search, 2: Discovery, 3: All - default)
+        const startDateCampaign = params.start_performance_date || params.start_date;
+        const endDateCampaign = params.end_performance_date || params.end_date;
+        if (!params.campaign_id_list || !startDateCampaign || !endDateCampaign) {
+          return new Response(JSON.stringify({ error: 'campaign_id_list, start_performance_date, end_performance_date are required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const campaignIds = Array.isArray(params.campaign_id_list)
+          ? params.campaign_id_list.join(',')
+          : params.campaign_id_list;
+
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_product_campaign_daily_performance',
+          'GET',
+          shop_id,
+          token,
+          undefined,
+          {
+            campaign_id_list: campaignIds,
+            start_performance_date: startDateCampaign,
+            end_performance_date: endDateCampaign,
+            ...(params.placement !== undefined && { placement: params.placement }),
+          }
+        );
+        break;
+      }
+
+      case 'get-campaign-hourly-performance': {
+        // Lấy hiệu suất từng campaign theo giờ (get_product_campaign_hourly_performance)
+        // Required: campaign_id_list (comma separated, max 100), performance_date
+        // Optional: placement (1: Search, 2: Discovery, 3: All - default)
+        const perfDateCampaign = params.performance_date || params.date;
+        if (!params.campaign_id_list || !perfDateCampaign) {
+          return new Response(JSON.stringify({ error: 'campaign_id_list and performance_date are required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const campaignIdsHourly = Array.isArray(params.campaign_id_list)
+          ? params.campaign_id_list.join(',')
+          : params.campaign_id_list;
+
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_product_campaign_hourly_performance',
+          'GET',
+          shop_id,
+          token,
+          undefined,
+          {
+            campaign_id_list: campaignIdsHourly,
+            performance_date: perfDateCampaign,
+            ...(params.placement !== undefined && { placement: params.placement }),
+          }
+        );
+        break;
+      }
+
+      case 'get-recommended-keywords': {
+        // Lấy danh sách từ khóa đề xuất cho sản phẩm (get_recommended_keyword_list)
+        // Required: item_id (number)
+        // Optional: input_keyword (string) - từ khóa để lọc
+        // Response: suggested_keywords[] với keyword, quality_score, search_volume, suggested_bid
+        if (!params.item_id) {
+          return new Response(JSON.stringify({ error: 'item_id is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_recommended_keyword_list',
+          'GET',
+          shop_id,
+          token,
+          undefined,
+          {
+            item_id: params.item_id,
+            ...(params.input_keyword && { input_keyword: params.input_keyword }),
+          }
+        );
+
+        // Lưu lịch sử nếu có yêu cầu
+        if (params.save_history && result && !(result as Record<string, unknown>).error) {
+          const shopUuid = await getShopUuid(supabase, shop_id);
+          if (shopUuid) {
+            // API trả về suggested_keywords, không phải keyword_list
+            const keywordList = (result as Record<string, unknown>).response?.suggested_keywords || [];
+            await supabase.from('apishopee_keyword_history').insert({
+              shop_id: shopUuid,
+              item_id: params.item_id,
+              item_name: params.item_name || null,
+              input_keyword: params.input_keyword || null,
+              keywords: keywordList,
+              keyword_count: Array.isArray(keywordList) ? keywordList.length : 0,
+              searched_at: new Date().toISOString(),
+            });
+          }
+        }
+        break;
+      }
+
+      case 'get-keyword-history': {
+        // Lấy lịch sử tra cứu từ khóa
+        // Optional: limit (number, default 20)
+        const shopUuid = await getShopUuid(supabase, shop_id);
+        if (!shopUuid) {
+          return new Response(JSON.stringify({ error: 'Shop not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { data: history, error: historyError } = await supabase
+          .from('apishopee_keyword_history')
+          .select('*')
+          .eq('shop_id', shopUuid)
+          .order('searched_at', { ascending: false })
+          .limit(params.limit || 20);
+
+        if (historyError) throw historyError;
+        result = { response: { history_list: history || [] } };
+        break;
+      }
+
+      case 'delete-keyword-history': {
+        // Xóa một mục lịch sử
+        // Required: history_id (string UUID)
+        if (!params.history_id) {
+          return new Response(JSON.stringify({ error: 'history_id is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { error: deleteError } = await supabase
+          .from('apishopee_keyword_history')
+          .delete()
+          .eq('id', params.history_id);
+
+        if (deleteError) throw deleteError;
+        result = { response: { success: true } };
+        break;
+      }
+
+      case 'get-total-balance': {
+        // Lấy số dư tài khoản quảng cáo (get_total_balance)
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_total_balance',
+          'GET',
+          shop_id,
+          token
+        );
+        break;
+      }
+
+      case 'get-shop-toggle-info': {
+        // Lấy thông tin bật/tắt quảng cáo của shop (get_shop_toggle_info)
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_shop_toggle_info',
+          'GET',
+          shop_id,
+          token
+        );
+        break;
+      }
+
+      case 'get-recommended-items': {
+        // Lấy danh sách sản phẩm đề xuất cho quảng cáo (get_recommended_item_list)
+        // Optional: limit (number, default 100, max 100)
+        result = await callShopeeAPIWithRetry(
+          supabase,
+          credentials,
+          '/api/v2/ads/get_recommended_item_list',
+          'GET',
+          shop_id,
+          token,
+          undefined,
+          {
+            ...(params.limit !== undefined && { limit: params.limit }),
+          }
         );
         break;
       }

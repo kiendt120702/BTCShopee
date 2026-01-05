@@ -40,3 +40,7 @@ enable_signup = true
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
+
+# Note: OTP expiry, min_password_length, rate limiting 
+# should be configured in Supabase Dashboard > Authentication > Settings
+# These settings are not supported in local config.toml

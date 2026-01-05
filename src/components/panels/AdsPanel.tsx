@@ -13,7 +13,7 @@ import { DataTable } from '@/components/ui/data-table';
 
 interface CampaignData extends CampaignIdItem { name?: string; status?: string; common_info?: CommonInfo; }
 interface BudgetSchedule { id: string; campaign_id: number; campaign_name: string; ad_type: string; hour_start: number; hour_end: number; minute_start?: number; minute_end?: number; budget: number; days_of_week?: number[]; specific_dates?: string[]; is_active?: boolean; created_at?: string; }
-interface BudgetLog { id: string; campaign_id: number; campaign_name?: string; new_budget: number; status: string; executed_at: string; }
+interface BudgetLog { id: string; campaign_id: number; campaign_name?: string; new_budget: number; status: string; error_message?: string; executed_at: string; }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   ongoing: { label: 'Đang chạy', color: 'bg-green-100 text-green-700' },
@@ -344,6 +344,20 @@ export default function AdsPanel() {
         <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap", row.original.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
           {row.original.status === 'success' ? 'Thành công' : 'Lỗi'}
         </span>
+      ),
+    },
+    {
+      accessorKey: 'error_message',
+      header: 'Chi tiết lỗi',
+      size: 200,
+      cell: ({ row }) => (
+        row.original.error_message ? (
+          <span className="text-xs text-red-600 break-words whitespace-normal max-w-[200px]" title={row.original.error_message}>
+            {row.original.error_message.length > 50 ? row.original.error_message.substring(0, 50) + '...' : row.original.error_message}
+          </span>
+        ) : (
+          <span className="text-xs text-slate-400">-</span>
+        )
       ),
     },
     {

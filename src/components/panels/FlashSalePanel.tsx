@@ -351,7 +351,9 @@ const FlashSalePanel = forwardRef<FlashSalePanelRef>((_, ref) => {
       ]);
 
       if (timeSlotsRes.error) throw timeSlotsRes.error;
-      setTimeSlots(timeSlotsRes.data?.response || []);
+      // Shopee API trả về { response: { time_slot_id: [...] } }
+      const timeSlotsData = timeSlotsRes.data?.response?.time_slot_id || timeSlotsRes.data?.response || [];
+      setTimeSlots(timeSlotsData);
 
       const scheduledSet = new Set<number>();
       if (scheduledRes.data) {
