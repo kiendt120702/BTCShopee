@@ -26,6 +26,8 @@ export const supabase: SupabaseClient = createClient(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
+      storageKey: 'betacom-auth-token',
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     },
   }
 );

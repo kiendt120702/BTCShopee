@@ -12,8 +12,20 @@ export default function MainLayout() {
   const { isAuthenticated, isLoading } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // Show loading while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-slate-500 text-sm">Đang tải...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Redirect to login if not authenticated
-  if (!isLoading && !isAuthenticated) {
+  if (!isAuthenticated) {
     return <Navigate to="/auth" replace />;
   }
 

@@ -89,34 +89,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    let initialLoadDone = false;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!mounted) return;
-
-      if (session?.user) {
-        setSession(session);
-        setUser(session.user);
-        await loadProfile(session.user.id);
-      } else {
-        setSession(null);
-        setUser(null);
-        setIsLoading(false);
-      }
-      initialLoadDone = true;
-    });
-
+    // Set up auth state listener FIRST (before getSession)
+    // This ensures we don't miss any auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event, newSession) => {
         if (!mounted) return;
-        if (event === 'INITIAL_SESSION') return;
-        if (event === 'TOKEN_REFRESHED') return;
-        if (!initialLoadDone) return;
+        
+        console.log('[Auth] Event:', event, 'Session:', !!newSession);
 
-        if (event === 'SIGNED_IN' && session?.user) {
-          setSession(session);
-          setUser(session.user);
-          await loadProfile(session.user.id);
+        // Handle all session-related events
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+          if (newSession?.user) {
+            setSession(newSession);
+            setUser(newSession.user);
+            // Only load profile on SIGNED_IN or INITIAL_SESSION, not on TOKEN_REFRESHED
+            if (event !== 'TOKEN_REFRESHED') {
+              await loadProfile(newSession.user.id);
+            } else {
+              setIsLoading(false);
+            }
+          } else if (event === 'INITIAL_SESSION') {
+            // No session on initial load
+            setSession(null);
+            setUser(null);
+            setIsLoading(false);
+          }
         } else if (event === 'SIGNED_OUT') {
           setSession(null);
           setUser(null);
@@ -125,6 +123,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     );
+
+    // Then get the initial session
+    // The INITIAL_SESSION event will be fired by onAuthStateChange
+    supabase.auth.getSession().then(({ data: { session: initialSession }, error }) => {
+      if (!mounted) return;
+      
+      if (error) {
+        console.error('[Auth] getSession error:', error);
+        setSession(null);
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      // If no INITIAL_SESSION event was fired (edge case), handle it here
+      if (initialSession?.user && !user) {
+        setSession(initialSession);
+        setUser(initialSession.user);
+        loadProfile(initialSession.user.id);
+      } else if (!initialSession && isLoading) {
+        setIsLoading(false);
+      }
+    });
 
     return () => {
       mounted = false;
