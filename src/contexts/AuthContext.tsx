@@ -80,78 +80,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const loadProfile = async (userId: string) => {
     const profileData = await getUserProfile(userId);
     setProfile(profileData);
-    setIsLoading(false);
   };
 
   useEffect(() => {
     let mounted = true;
 
-    // Set up auth state listener FIRST (before getSession)
-    // This ensures we don't miss any auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         if (!mounted) return;
-        
-        console.log('[Auth] Event:', event, 'Session:', !!newSession);
 
-        // Handle all session-related events
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        // TOKEN_REFRESHED: chỉ update session, không làm gì khác
+        if (event === 'TOKEN_REFRESHED') {
+          if (newSession) {
+            setSession(newSession);
+            setUser(newSession.user);
+          }
+          return;
+        }
+
+        // INITIAL_SESSION: xử lý lần đầu load
+        if (event === 'INITIAL_SESSION') {
           if (newSession?.user) {
             setSession(newSession);
             setUser(newSession.user);
-            // Only load profile on SIGNED_IN or INITIAL_SESSION, not on TOKEN_REFRESHED
-            if (event !== 'TOKEN_REFRESHED') {
-              await loadProfile(newSession.user.id);
-            } else {
-              setIsLoading(false);
-            }
-          } else if (event === 'INITIAL_SESSION') {
-            // No session on initial load
-            setSession(null);
-            setUser(null);
-            setIsLoading(false);
+            await loadProfile(newSession.user.id);
           }
-        } else if (event === 'SIGNED_OUT') {
+          setIsLoading(false);
+          setIsInitialized(true);
+          return;
+        }
+
+        // SIGNED_IN: chỉ xử lý nếu đã initialized (tránh duplicate với INITIAL_SESSION)
+        if (event === 'SIGNED_IN' && isInitialized) {
+          if (newSession?.user) {
+            setSession(newSession);
+            setUser(newSession.user);
+            await loadProfile(newSession.user.id);
+          }
+          return;
+        }
+
+        // SIGNED_OUT
+        if (event === 'SIGNED_OUT') {
           setSession(null);
           setUser(null);
           setProfile(null);
-          setIsLoading(false);
         }
       }
     );
 
-    // Then get the initial session
-    // The INITIAL_SESSION event will be fired by onAuthStateChange
-    supabase.auth.getSession().then(({ data: { session: initialSession }, error }) => {
-      if (!mounted) return;
+    // Fallback: nếu INITIAL_SESSION không fire sau 2s, tự getSession
+    const timeout = setTimeout(async () => {
+      if (!mounted || isInitialized) return;
       
-      if (error) {
-        console.error('[Auth] getSession error:', error);
-        setSession(null);
-        setUser(null);
-        setIsLoading(false);
-        return;
-      }
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      if (!mounted || isInitialized) return;
 
-      // If no INITIAL_SESSION event was fired (edge case), handle it here
-      if (initialSession?.user && !user) {
+      if (initialSession?.user) {
         setSession(initialSession);
         setUser(initialSession.user);
-        loadProfile(initialSession.user.id);
-      } else if (!initialSession && isLoading) {
-        setIsLoading(false);
+        await loadProfile(initialSession.user.id);
       }
-    });
+      setIsLoading(false);
+      setIsInitialized(true);
+    }, 2000);
 
     return () => {
       mounted = false;
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [isInitialized]);
 
   const signUp = async (email: string, password: string, fullName?: string) => {
     setIsLoading(true);
