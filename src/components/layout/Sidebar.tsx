@@ -19,7 +19,6 @@ import {
   LogOut,
   User,
   Store,
-  Shield,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -66,7 +65,6 @@ const menuItems: MenuItem[] = [
     children: [
       { title: 'Thông tin cá nhân', icon: User, path: '/settings/profile' },
       { title: 'Quản lý Shop', icon: Store, path: '/settings/shops' },
-      { title: 'Phân quyền Shop', icon: Shield, path: '/settings/permissions' },
     ],
   },
 ];

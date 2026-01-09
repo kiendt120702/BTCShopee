@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * AuthContext - Share auth state across all components
  * Giải quyết vấn đề mỗi useAuth() tạo state riêng
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isInitialized, setIsInitialized] = useState(false);
 
   const loadProfile = async (userId: string) => {
@@ -89,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let initialized = false;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
@@ -112,11 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           setIsLoading(false);
           setIsInitialized(true);
+          initialized = true;
           return;
         }
 
         // SIGNED_IN: chỉ xử lý nếu đã initialized (tránh duplicate với INITIAL_SESSION)
-        if (event === 'SIGNED_IN' && isInitialized) {
+        if (event === 'SIGNED_IN' && initialized) {
           if (newSession?.user) {
             setSession(newSession);
             setUser(newSession.user);
@@ -136,10 +140,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Fallback: nếu INITIAL_SESSION không fire sau 2s, tự getSession
     const timeout = setTimeout(async () => {
-      if (!mounted || isInitialized) return;
+      if (!mounted || initialized) return;
       
       const { data: { session: initialSession } } = await supabase.auth.getSession();
-      if (!mounted || isInitialized) return;
+      if (!mounted || initialized) return;
 
       if (initialSession?.user) {
         setSession(initialSession);
@@ -148,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setIsLoading(false);
       setIsInitialized(true);
+      initialized = true;
     }, 2000);
 
     return () => {
@@ -155,7 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(timeout);
       subscription.unsubscribe();
     };
-  }, [isInitialized]);
+  }, []);
 
   const signUp = async (email: string, password: string, fullName?: string) => {
     setIsLoading(true);

@@ -22,7 +22,6 @@ import NotFoundPage from '@/pages/NotFoundPage';
 // Settings Pages
 import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
 import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
-import PermissionsSettingsPage from '@/pages/settings/PermissionsSettingsPage';
 
 function App() {
   const [queryClient] = useState(
@@ -60,7 +59,6 @@ function App() {
                 <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
                 <Route path="/settings/profile" element={<ProfileSettingsPage />} />
                 <Route path="/settings/shops" element={<ShopsSettingsPage />} />
-                <Route path="/settings/permissions" element={<PermissionsSettingsPage />} />
               </Route>
 
               {/* 404 */}

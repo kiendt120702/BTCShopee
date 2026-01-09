@@ -85,13 +85,15 @@ export function useShopeeAuth(): UseShopeeAuthReturn {
         const userShops = await getUserShops(userId);
 
         if (userShops && userShops.length > 0) {
-          const shopInfoList: ShopInfo[] = userShops.map((shop: any) => ({
-            shop_id: shop.shop_id,
-            shop_name: shop.shop_name,
-            shop_logo: shop.shop_logo,
-            region: shop.region,
-            is_active: true
-          }));
+          const shopInfoList: ShopInfo[] = userShops
+            .filter((shop): shop is typeof shop & { shop_id: number } => typeof shop.shop_id === 'number')
+            .map((shop) => ({
+              shop_id: shop.shop_id,
+              shop_name: shop.shop_name ?? null,
+              shop_logo: shop.shop_logo ?? null,
+              region: shop.region ?? null,
+              is_active: true
+            }));
           setShops(shopInfoList);
 
           // If switching to specific shop, always load that shop's token
@@ -184,6 +186,7 @@ export function useShopeeAuth(): UseShopeeAuthReturn {
       mounted = false;
       subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadTokenFromSource]);
 
   const login = useCallback(

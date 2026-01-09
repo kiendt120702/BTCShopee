@@ -2,7 +2,7 @@
  * Shop Management Panel - Quản lý danh sách shop
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
@@ -66,7 +66,7 @@ export function ShopManagementPanel() {
   const [partnerNameInput, setPartnerNameInput] = useState('');
   const [connecting, setConnecting] = useState(false);
 
-  const loadShops = async () => {
+  const loadShops = useCallback(async () => {
     if (!user?.id) {
       console.log('[SHOPS] No user ID, skipping load');
       return;
@@ -105,10 +105,12 @@ export function ShopManagementPanel() {
       const shopsWithRole: ShopWithRole[] = memberData
         .filter(m => m.apishopee_shops) // Chỉ lấy những member có shop data
         .map(m => {
-          const shop = m.apishopee_shops as any;
+          // Supabase returns single object for .single() relations
+          const shop = m.apishopee_shops as unknown as Shop;
+          const roles = m.apishopee_roles as unknown as { name?: string } | null;
           return {
             ...shop,
-            role: (m.apishopee_roles as any)?.name || 'member',
+            role: roles?.name || 'member',
           };
         });
 
@@ -124,7 +126,7 @@ export function ShopManagementPanel() {
       });
       setLoading(false);
     }
-  };
+  }, [user?.id, toast]);
 
   // Check for refresh param from OAuth callback
   useEffect(() => {
@@ -138,6 +140,12 @@ export function ShopManagementPanel() {
     }
   }, [searchParams, setSearchParams]);
 
+  // Reset hasLoadedRef when component mounts (fixes tab switching issue)
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    fetchedExpireTimeRef.current = new Set();
+  }, []);
+
   useEffect(() => {
     // Chờ auth loading xong mới query
     if (!isAuthLoading && user?.id) {
@@ -150,20 +158,10 @@ export function ShopManagementPanel() {
       // Auth xong nhưng không có user -> không loading nữa
       setLoading(false);
     }
-  }, [user?.id, isAuthLoading]);
+  }, [user?.id, isAuthLoading, loadShops]);
 
-  // Force reload shops when component mounts or becomes visible
-  // This ensures shops are loaded after OAuth callback redirect
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && user?.id && !loading) {
-        loadShops();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [user?.id, loading]);
+  // Note: Removed visibilitychange listener as it was causing unnecessary reloads
+  // OAuth callback now uses ?refresh param to trigger reload when needed
 
   // Tự động fetch expire_time cho các shop chưa có giá trị này
   // expire_time được trả về từ Shopee API get_shop_info, không phải từ token API

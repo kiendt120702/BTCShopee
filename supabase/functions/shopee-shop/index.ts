@@ -21,7 +21,6 @@ const PROXY_URL = Deno.env.get('SHOPEE_PROXY_URL') || ''; // VPS Proxy URL
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
-const TOKEN_BUFFER_MS = 5 * 60 * 1000;
 const CACHE_TTL_MS = 30 * 60 * 1000; // Cache 30 phút
 
 // Interface cho partner credentials

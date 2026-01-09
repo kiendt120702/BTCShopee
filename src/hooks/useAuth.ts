@@ -15,7 +15,7 @@ export async function saveUserShop(
   refreshToken: string,
   expiredAt: number,
   merchantId?: number,
-  _partnerAccountId?: string,
+  partnerAccountId?: string,
   partnerInfo?: {
     partner_id: number;
     partner_key: string;
@@ -23,6 +23,8 @@ export async function saveUserShop(
     partner_created_by?: string;
   }
 ) {
+  // partnerAccountId is kept for API compatibility but not used
+  void partnerAccountId;
 
   const { data: existingShop } = await supabase
     .from('apishopee_shops')
@@ -142,8 +144,8 @@ export async function getUserShops(userId: string) {
     return memberData
       .filter(member => member.apishopee_shops)
       .map(member => {
-        const shop = member.apishopee_shops as any;
-        const role = member.apishopee_roles as any || { name: 'member', display_name: 'Member' };
+        const shop = member.apishopee_shops as { id?: string; shop_id?: number; shop_name?: string; region?: string; shop_logo?: string } | null;
+        const role = member.apishopee_roles as { name?: string; display_name?: string } | null || { name: 'member', display_name: 'Member' };
 
         return {
           id: shop?.id,
