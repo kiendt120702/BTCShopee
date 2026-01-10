@@ -6,12 +6,9 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import ShopSelector from './ShopSelector';
 import {
-  Zap,
-  Megaphone,
-  Package,
-  ShoppingCart,
-  LayoutDashboard,
+  Home,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +16,7 @@ import {
   LogOut,
   User,
   Store,
+  Zap,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,36 +26,21 @@ interface SidebarProps {
 
 interface MenuItem {
   title: string;
-  icon: typeof LayoutDashboard;
+  icon: typeof Home;
   path?: string;
   children?: { title: string; icon: typeof User; path: string }[];
 }
 
 const menuItems: MenuItem[] = [
   {
-    title: 'Dashboard',
-    icon: LayoutDashboard,
-    path: '/dashboard',
+    title: 'Trang chủ',
+    icon: Home,
+    path: '/',
   },
   {
     title: 'Flash Sale',
     icon: Zap,
     path: '/flash-sale',
-  },
-  {
-    title: 'Quảng cáo (ADS)',
-    icon: Megaphone,
-    path: '/ads',
-  },
-  {
-    title: 'Sản phẩm',
-    icon: Package,
-    path: '/products',
-  },
-  {
-    title: 'Đơn hàng',
-    icon: ShoppingCart,
-    path: '/orders',
   },
   {
     title: 'Cài đặt',
@@ -110,6 +93,13 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         )}
       </div>
+
+      {/* Shop Selector - Chuyển đổi giữa các shop */}
+      {!collapsed && (
+        <div className="px-3 py-3 border-b border-slate-200">
+          <ShopSelector />
+        </div>
+      )}
 
       {/* Toggle Button */}
       <button

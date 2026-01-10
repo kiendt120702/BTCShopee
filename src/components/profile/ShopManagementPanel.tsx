@@ -79,10 +79,14 @@ interface ShopMember {
   role: Role;
 }
 
-export function ShopManagementPanel() {
+interface ShopManagementPanelProps {
+  readOnly?: boolean; // Chế độ chỉ xem - ẩn các action
+}
+
+export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelProps) {
   const { toast } = useToast();
   const { user, login, isLoading: isAuthLoading } = useShopeeAuth();
-  const { user: authUser } = useAuth();
+  const { user: authUser, isLoading: isAuthContextLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [shops, setShops] = useState<ShopWithRole[]>([]);
@@ -92,6 +96,9 @@ export function ShopManagementPanel() {
 
   // Kiểm tra user hiện tại có phải admin không
   const isSystemAdmin = authUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  
+  // Combined loading state - chờ cả 2 auth sources
+  const isAnyAuthLoading = isAuthLoading || isAuthContextLoading;
 
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -118,13 +125,16 @@ export function ShopManagementPanel() {
   const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const loadShops = useCallback(async () => {
-    if (!user?.id) {
+  const loadShops = useCallback(async (userId?: string) => {
+    // Sử dụng userId được truyền vào, hoặc fallback về user?.id
+    const effectiveUserId = userId || user?.id;
+    
+    if (!effectiveUserId) {
       console.log('[SHOPS] No user ID, skipping load');
       return;
     }
 
-    console.log('[SHOPS] Loading shops for user:', user.id);
+    console.log('[SHOPS] Loading shops for user:', effectiveUserId);
     setLoading(true);
     try {
       // Query shop_members với role info và join luôn shops data
@@ -136,7 +146,7 @@ export function ShopManagementPanel() {
           apishopee_roles(name),
           apishopee_shops(id, shop_id, shop_name, shop_logo, region, partner_id, partner_key, partner_name, created_at, token_updated_at, expired_at, access_token_expired_at, expire_in, expire_time)
         `)
-        .eq('profile_id', user.id)
+        .eq('profile_id', effectiveUserId)
         .eq('is_active', true);
 
       if (memberError) {
@@ -191,12 +201,13 @@ export function ShopManagementPanel() {
       hasLoadedRef.current = false;
       fetchedExpireTimeRef.current = new Set();
       // Trigger reload nếu đã có user
-      if (user?.id && !isAuthLoading) {
-        loadShops();
+      const userId = authUser?.id || user?.id;
+      if (userId && !isAnyAuthLoading) {
+        loadShops(userId);
         hasLoadedRef.current = true;
       }
     }
-  }, [searchParams, setSearchParams, user?.id, isAuthLoading, loadShops]);
+  }, [searchParams, setSearchParams, user?.id, authUser?.id, isAnyAuthLoading, loadShops]);
 
   // Reset hasLoadedRef when component mounts (fixes tab switching issue)
   useEffect(() => {
@@ -205,18 +216,46 @@ export function ShopManagementPanel() {
   }, []);
 
   useEffect(() => {
+    // Sử dụng authUser từ useAuth (AuthContext) thay vì user từ useShopeeAuth
+    // vì AuthContext đã được init trước và stable hơn
+    const userId = authUser?.id || user?.id;
+    
+    console.log('[SHOPS] Auth state check:', {
+      isAnyAuthLoading,
+      userId,
+      authUserId: authUser?.id,
+      shopeeUserId: user?.id,
+      hasLoaded: hasLoadedRef.current,
+    });
+    
     // Chờ auth loading xong mới query
-    if (!isAuthLoading && user?.id) {
+    if (!isAnyAuthLoading && userId) {
       // Only load if not already loaded (unless refresh param was set)
       if (!hasLoadedRef.current) {
+        console.log('[SHOPS] Starting load for user:', userId);
         hasLoadedRef.current = true;
-        loadShops();
+        loadShops(userId);
       }
-    } else if (!isAuthLoading && !user?.id) {
+    } else if (!isAnyAuthLoading && !userId) {
       // Auth xong nhưng không có user -> không loading nữa
+      console.log('[SHOPS] No user found after auth completed, stopping loading');
       setLoading(false);
     }
-  }, [user?.id, isAuthLoading, loadShops]);
+  }, [user?.id, authUser?.id, isAnyAuthLoading, loadShops]);
+
+  // Fallback: nếu loading quá lâu (> 5s) mà không có data, tự động tắt loading
+  useEffect(() => {
+    if (!loading) return;
+    
+    const timeout = setTimeout(() => {
+      if (loading && shops.length === 0) {
+        console.warn('[SHOPS] Loading timeout - forcing stop');
+        setLoading(false);
+      }
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [loading, shops.length]);
 
   // Note: Removed visibilitychange listener as it was causing unnecessary reloads
   // OAuth callback now uses ?refresh param to trigger reload when needed
@@ -663,7 +702,7 @@ export function ShopManagementPanel() {
           logo={shop.shop_logo}
           name={shop.shop_name || `Shop ${shop.shop_id}`}
           region={shop.region || 'VN'}
-          onRefresh={() => handleRefreshShopName(shop.shop_id)}
+          onRefresh={readOnly ? undefined : () => handleRefreshShopName(shop.shop_id)}
           refreshing={refreshingShop === shop.shop_id}
         />
       ),
@@ -710,7 +749,8 @@ export function ShopManagementPanel() {
         );
       },
     },
-    {
+    // Chỉ hiển thị cột Thao tác khi không phải readOnly
+    ...(!readOnly ? [{
       key: 'actions',
       header: 'Thao tác',
       render: (shop: ShopWithRole) => (
@@ -769,7 +809,7 @@ export function ShopManagementPanel() {
           )}
         </CellActions>
       ),
-    },
+    }] : []),
   ];
 
   if (loading) {
@@ -778,7 +818,7 @@ export function ShopManagementPanel() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between">
             <span>Shop có quyền truy cập</span>
-            {isSystemAdmin && (
+            {!readOnly && isSystemAdmin && (
               <Button className="bg-orange-500 hover:bg-orange-600" disabled>
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -812,7 +852,7 @@ export function ShopManagementPanel() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between">
             <span>Shop có quyền truy cập ({shops.length})</span>
-            {isSystemAdmin && (
+            {!readOnly && isSystemAdmin && (
               <Button
                 className="bg-orange-500 hover:bg-orange-600"
                 onClick={handleConnectNewShop}

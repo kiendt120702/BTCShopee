@@ -81,7 +81,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isInitialized, setIsInitialized] = useState(false);
 
   const loadProfile = async (userId: string) => {
@@ -91,75 +90,112 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    let initialized = false;
 
+    const initializeAuth = async () => {
+      try {
+        // Lấy session hiện tại trước
+        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+
+        if (sessionError) {
+          console.error('[Auth] Error getting session:', sessionError);
+          setIsLoading(false);
+          setIsInitialized(true);
+          return;
+        }
+
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          await loadProfile(currentSession.user.id);
+        }
+
+        setIsLoading(false);
+        setIsInitialized(true);
+      } catch (err) {
+        console.error('[Auth] Init error:', err);
+        if (mounted) {
+          setIsLoading(false);
+          setIsInitialized(true);
+        }
+      }
+    };
+
+    // Khởi tạo auth state
+    initializeAuth();
+
+    // Lắng nghe thay đổi auth state
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         if (!mounted) return;
 
-        // TOKEN_REFRESHED: chỉ update session, không làm gì khác
-        if (event === 'TOKEN_REFRESHED') {
-          if (newSession) {
-            setSession(newSession);
-            setUser(newSession.user);
-          }
-          return;
-        }
+        console.log('[Auth] Event:', event, 'Session:', !!newSession);
 
-        // INITIAL_SESSION: xử lý lần đầu load
-        if (event === 'INITIAL_SESSION') {
-          if (newSession?.user) {
-            setSession(newSession);
-            setUser(newSession.user);
-            await loadProfile(newSession.user.id);
-          }
-          setIsLoading(false);
-          setIsInitialized(true);
-          initialized = true;
-          return;
-        }
+        switch (event) {
+          case 'TOKEN_REFRESHED':
+            // Chỉ update session/user, không thay đổi loading
+            if (newSession) {
+              setSession(newSession);
+              setUser(newSession.user);
+            }
+            break;
 
-        // SIGNED_IN: chỉ xử lý nếu đã initialized (tránh duplicate với INITIAL_SESSION)
-        if (event === 'SIGNED_IN' && initialized) {
-          if (newSession?.user) {
-            setSession(newSession);
-            setUser(newSession.user);
-            await loadProfile(newSession.user.id);
-          }
-          return;
-        }
+          case 'SIGNED_IN':
+            if (newSession?.user) {
+              setSession(newSession);
+              setUser(newSession.user);
+              // Chỉ load profile nếu đã initialized (tránh duplicate)
+              if (isInitialized) {
+                await loadProfile(newSession.user.id);
+              }
+            }
+            break;
 
-        // SIGNED_OUT
-        if (event === 'SIGNED_OUT') {
-          setSession(null);
-          setUser(null);
-          setProfile(null);
+          case 'SIGNED_OUT':
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setIsLoading(false);
+            break;
+
+          case 'USER_UPDATED':
+            if (newSession?.user) {
+              setSession(newSession);
+              setUser(newSession.user);
+              await loadProfile(newSession.user.id);
+            }
+            break;
+
+          case 'INITIAL_SESSION':
+            // Đã xử lý trong initializeAuth, bỏ qua
+            break;
+
+          default:
+            // Các event khác: đảm bảo không bị stuck loading
+            if (!isInitialized) {
+              setIsLoading(false);
+              setIsInitialized(true);
+            }
         }
       }
     );
 
-    // Fallback: nếu INITIAL_SESSION không fire sau 2s, tự getSession
-    const timeout = setTimeout(async () => {
-      if (!mounted || initialized) return;
-      
-      const { data: { session: initialSession } } = await supabase.auth.getSession();
-      if (!mounted || initialized) return;
-
-      if (initialSession?.user) {
-        setSession(initialSession);
-        setUser(initialSession.user);
-        await loadProfile(initialSession.user.id);
+    // Safety timeout: đảm bảo không bao giờ bị stuck loading quá 5s
+    const safetyTimeout = setTimeout(() => {
+      if (mounted && isLoading) {
+        console.warn('[Auth] Safety timeout triggered - forcing loading to false');
+        setIsLoading(false);
+        setIsInitialized(true);
       }
-      setIsLoading(false);
-      setIsInitialized(true);
-      initialized = true;
-    }, 2000);
+    }, 5000);
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const signUp = async (email: string, password: string, fullName?: string) => {

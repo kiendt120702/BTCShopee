@@ -12,16 +12,15 @@ import MainLayout from '@/components/layout/MainLayout';
 // Pages
 import AuthPage from '@/pages/AuthPage';
 import AuthCallback from '@/pages/AuthCallback';
-import DashboardPage from '@/pages/DashboardPage';
-import FlashSalePage from '@/pages/FlashSalePage';
-import AdsPage from '@/pages/AdsPage';
-import ProductsPage from '@/pages/ProductsPage';
-import OrdersPage from '@/pages/OrdersPage';
+import HomePage from '@/pages/HomePage';
 import NotFoundPage from '@/pages/NotFoundPage';
 
 // Settings Pages
 import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
 import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
+
+// Feature Pages
+import FlashSalePage from '@/pages/FlashSalePage';
 
 function App() {
   const [queryClient] = useState(
@@ -49,12 +48,9 @@ function App() {
 
               {/* Protected routes with MainLayout */}
               <Route element={<MainLayout />}>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/" element={<HomePage />} />
+                {/* Feature Routes */}
                 <Route path="/flash-sale" element={<FlashSalePage />} />
-                <Route path="/ads" element={<AdsPage />} />
-                <Route path="/products" element={<ProductsPage />} />
-                <Route path="/orders" element={<OrdersPage />} />
                 {/* Settings Routes */}
                 <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
                 <Route path="/settings/profile" element={<ProfileSettingsPage />} />
