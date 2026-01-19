@@ -294,14 +294,14 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
             console.log('[AUTH] Shop and token saved to database');
 
             try {
-              const { data, error } = await supabase.functions.invoke('apishopee-shop', {
+              const { data, error } = await supabase.functions.invoke('shopee-shop', {
                 body: { action: 'get-full-info', shop_id: newToken.shop_id, force_refresh: true },
               });
               
               if (error) {
                 console.warn('[AUTH] Failed to fetch shop info:', error);
               } else {
-                console.log('[AUTH] Shop info fetched successfully:', data?.shop_name);
+                console.log('[AUTH] Shop info fetched successfully:', data?.info?.shop_name);
               }
             } catch (err) {
               console.warn('[AUTH] Error fetching shop info:', err);

@@ -150,15 +150,16 @@ export function AllShopsPanel() {
   const handleRefreshShopName = async (shopId: number) => {
     setRefreshingShop(shopId);
     try {
-      const { data, error } = await supabase.functions.invoke('apishopee-shop', {
+      const { data, error } = await supabase.functions.invoke('shopee-shop', {
         body: { action: 'get-full-info', shop_id: shopId, force_refresh: true },
       });
 
       if (error) throw error;
 
-      const shopName = data?.shop_name;
-      const shopLogo = data?.shop_logo;
-      const expireTime = data?.expire_time;
+      // Response structure: { info: {...}, profile: { response: {...} }, cached }
+      const shopName = data?.info?.shop_name;
+      const shopLogo = data?.profile?.response?.shop_logo;
+      const expireTime = data?.info?.expire_time;
 
       if (shopName) {
         setShops(prev => prev.map(s =>

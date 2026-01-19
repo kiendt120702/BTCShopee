@@ -285,7 +285,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
 
         try {
           // Dùng cache trước, chỉ force_refresh khi cần
-          const { data, error } = await supabase.functions.invoke('apishopee-shop', {
+          const { data, error } = await supabase.functions.invoke('shopee-shop', {
             body: { action: 'get-full-info', shop_id: shop.shop_id, force_refresh: false },
           });
 
@@ -294,7 +294,7 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
             return null;
           }
 
-          return { shop_id: shop.shop_id, expire_time: data?.expire_time };
+          return { shop_id: shop.shop_id, expire_time: data?.info?.expire_time };
         } catch (err) {
           console.error('[SHOPS] Error fetching info for shop', shop.shop_id, err);
           return null;
@@ -322,16 +322,16 @@ export function ShopManagementPanel({ readOnly = false }: ShopManagementPanelPro
   const handleRefreshShopName = async (shopId: number) => {
     setRefreshingShop(shopId);
     try {
-      const { data, error } = await supabase.functions.invoke('apishopee-shop', {
+      const { data, error } = await supabase.functions.invoke('shopee-shop', {
         body: { action: 'get-full-info', shop_id: shopId, force_refresh: true },
       });
 
       if (error) throw error;
 
-      // Response structure: { shop_name, shop_logo, region, expire_time, auth_time, cached, info }
-      const shopName = data?.shop_name;
-      const shopLogo = data?.shop_logo;
-      const expireTime = data?.expire_time; // Timestamp (seconds) khi authorization hết hạn
+      // Response structure: { info: {...}, profile: { response: {...} }, cached }
+      const shopName = data?.info?.shop_name;
+      const shopLogo = data?.profile?.response?.shop_logo;
+      const expireTime = data?.info?.expire_time; // Timestamp (seconds) khi authorization hết hạn
 
       if (shopName) {
         setShops(prev => prev.map(s =>
