@@ -831,61 +831,7 @@ export default function FlashSaleAutoSetupPage() {
           </Card>
         )}
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="border-0 shadow-sm">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Tổng cộng</p>
-                  <p className="text-2xl font-semibold text-slate-800">{stats.total}</p>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
-                  <Calendar className="h-5 w-5 text-slate-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Thành công</p>
-                  <p className="text-2xl font-semibold text-green-600">{stats.success}</p>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Lỗi</p>
-                  <p className="text-2xl font-semibold text-red-600">{stats.error}</p>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <XCircle className="h-5 w-5 text-red-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm">
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Đang chờ</p>
-                  <p className="text-2xl font-semibold text-blue-600">{stats.pending}</p>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-blue-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+
 
         {/* History Table */}
         <Card className="border-0 shadow-sm flex-1 flex flex-col min-h-0">
@@ -919,73 +865,106 @@ export default function FlashSaleAutoSetupPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0 flex-1 min-h-0 overflow-hidden">
-            {loadingHistory ? (
-              <div className="flex items-center justify-center py-12">
-                <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
-              </div>
-            ) : history.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                <AlertCircle className="h-12 w-12 mb-3" />
-                <p>Chưa có lịch sử nào</p>
-              </div>
-            ) : (
-              <div className="h-full overflow-auto">
-                {/* Mobile View */}
-                <div className="md:hidden divide-y">
+            {/* Mobile List View */}
+            <div className="md:hidden flex-1 overflow-y-auto">
+              {loadingHistory ? (
+                <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
+              ) : history.length === 0 ? (
+                <div className="p-8 text-center text-slate-500">
+                  <AlertCircle className="h-12 w-12 mb-3 mx-auto text-slate-300" />
+                  <p>Chưa có lịch sử nào</p>
+                </div>
+              ) : (
+                <div className="divide-y">
                   {history.map((record) => {
                     const statusConfig = STATUS_CONFIG[record.status] || STATUS_CONFIG.pending;
+                    const startDate = new Date(record.slot_start_time * 1000);
+                    const endDate = new Date(record.slot_end_time * 1000);
+                    const dateStr = startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    const startTimeStr = startDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                    const endTimeStr = endDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
                     return (
-                      <div key={record.id} className="p-4 bg-white hover:bg-slate-50">
-                        <div className="flex items-start justify-between mb-2">
-                          <Badge className={cn("flex items-center gap-1 w-fit text-[10px] px-1.5 py-0.5", statusConfig.color)}>
-                            {statusConfig.icon}
-                            {statusConfig.label}
-                          </Badge>
+                      <div key={record.id} className="p-4 bg-white">
+                        {/* Row 1: Date + Time + Delete */}
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3 text-sm text-slate-600">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              {dateStr}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
+                              {startTimeStr} - {endTimeStr}
+                            </span>
+                          </div>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => deleteRecord(record.id)}
-                            className="text-slate-400 hover:text-red-500 h-6 w-6 p-0"
+                            className="text-slate-400 hover:text-red-500 h-7 w-7 p-0"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
 
-                        <div className="space-y-2 mb-3">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500">Khung giờ:</span>
-                            <span className="font-medium text-slate-800">
-                              {formatDate(record.slot_start_time)} <span className="mx-1 text-slate-300">|</span> {formatTime(record.slot_start_time)} - {formatTime(record.slot_end_time)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500">Số sản phẩm:</span>
-                            <span className="font-medium text-slate-800">{record.items_count}</span>
-                          </div>
+                        {/* Row 2: Status Badge + Flash Sale ID */}
+                        <div className="mt-2 flex items-center gap-2">
+                          <Badge className={cn("flex items-center gap-1 text-[10px] px-1.5 py-0.5", statusConfig.color)}>
+                            {statusConfig.icon}
+                            {statusConfig.label}
+                          </Badge>
                           {record.status === 'success' && record.flash_sale_id && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500">Chi tiết:</span>
-                              <span className="text-green-600 font-mono">FS #{record.flash_sale_id}</span>
-                            </div>
+                            <span className="text-xs text-green-600 font-mono">
+                              FS #{record.flash_sale_id}
+                            </span>
                           )}
-                          {record.status === 'error' && record.error_message && (
-                            <div className="text-xs text-red-500 bg-red-50 p-2 rounded mt-2">
-                              Lỗi: {record.error_message}
-                            </div>
+                          {record.lead_time_minutes > 0 && (
+                            <span className="text-xs text-blue-600">
+                              {record.lead_time_minutes} phút trước
+                            </span>
                           )}
                         </div>
 
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-2 border-t border-slate-50">
-                          <span>Tạo: {formatDateTime(record.created_at)}</span>
-                          {record.executed_at && <span>Thực hiện: {formatDateTime(record.executed_at)}</span>}
+                        {/* Row 3: Items count */}
+                        <div className="mt-2 text-sm text-slate-600">
+                          <span className="text-slate-500">Số sản phẩm: </span>
+                          <span className="font-medium">{record.items_count}</span>
                         </div>
+
+                        {/* Error message if any */}
+                        {record.status === 'error' && record.error_message && (
+                          <div className="mt-2 text-xs text-red-500 bg-red-50 p-2 rounded">
+                            {record.error_message}
+                          </div>
+                        )}
+
+                        {/* Scheduled info */}
+                        {record.status === 'scheduled' && record.scheduled_at && (
+                          <div className="mt-2 text-xs text-blue-500 bg-blue-50 p-2 rounded">
+                            Chờ đến: {formatDateTime(record.scheduled_at)}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
+              )}
+            </div>
 
-                {/* Desktop View */}
-                <table className="w-full text-sm hidden md:table">
+            {/* Desktop Table */}
+            <div className="hidden md:block h-full overflow-auto">
+              {loadingHistory ? (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="h-6 w-6 animate-spin text-blue-500" />
+                </div>
+              ) : history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                  <AlertCircle className="h-12 w-12 mb-3" />
+                  <p>Chưa có lịch sử nào</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
                   <thead className="bg-slate-50 sticky top-0 z-10">
                     <tr className="border-b">
                       <th className="text-left px-4 py-3 font-medium text-slate-600">Trạng thái</th>
@@ -1057,8 +1036,8 @@ export default function FlashSaleAutoSetupPage() {
                     })}
                   </tbody>
                 </table>
-              </div>
-            )}
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
