@@ -872,8 +872,41 @@ serve(async (req) => {
         break;
       }
 
+      case 'get-comments': {
+        // Get raw API response for debugging/testing
+        // comment_type: 0 = All, 1 = Not replied, 2 = With reply
+        const { comment_type = 0, page_size = 20, cursor = '' } = body;
+        
+        const credentials = await getPartnerCredentials(supabase, shop_id);
+        const token = await getTokenWithAutoRefresh(supabase, shop_id);
+        
+        const params: Record<string, string | number> = { 
+          page_size,
+          comment_type
+        };
+        if (cursor) params.cursor = cursor;
+
+        const apiResult = await callShopeeAPI(
+          supabase, 
+          credentials, 
+          COMMENT_API_PATH, 
+          shop_id, 
+          token, 
+          params
+        ) as CommentApiResponse;
+
+        result = {
+          success: !apiResult.error,
+          comment_type,
+          page_size,
+          cursor: cursor || null,
+          response: apiResult,
+        };
+        break;
+      }
+
       default:
-        return new Response(JSON.stringify({ error: 'Invalid action. Use: sync, status, get-reviews, get-stats' }), {
+        return new Response(JSON.stringify({ error: 'Invalid action. Use: sync, status, get-reviews, get-stats, get-comments' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

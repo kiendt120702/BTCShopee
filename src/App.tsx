@@ -34,16 +34,21 @@ import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
 import AdsPage from '@/pages/AdsPage';
 import AdsHistoryPage from '@/pages/AdsHistoryPage';
 
+// Analytics Pages
+import AnalyticsOrdersPage from '@/pages/analytics/AnalyticsOrdersPage';
+import AnalyticsReviewsPage from '@/pages/analytics/AnalyticsReviewsPage';
+import AnalyticsCampaignsPage from '@/pages/analytics/AnalyticsCampaignsPage';
+
 function App() {
   const [queryClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh
+            staleTime: 1 * 60 * 1000, // 1 minute - data considered fresh (reduced from 5 minutes)
             gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache
             refetchOnWindowFocus: false, // Don't refetch when tab becomes active
-            refetchOnMount: false, // Don't refetch if data is fresh
+            refetchOnMount: true, // Always refetch on mount to ensure fresh data when switching pages
             retry: 1, // Only retry once on failure
           },
         },
@@ -77,6 +82,11 @@ function App() {
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
                   <Route path="/ads" element={<AdsPage />} />
                   <Route path="/ads/history" element={<AdsHistoryPage />} />
+
+                  {/* Analytics Routes */}
+                  <Route path="/analytics/orders" element={<AnalyticsOrdersPage />} />
+                  <Route path="/analytics/reviews" element={<AnalyticsReviewsPage />} />
+                  <Route path="/analytics/campaigns" element={<AnalyticsCampaignsPage />} />
                   {/* Settings Routes */}
                   <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />

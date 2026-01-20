@@ -94,10 +94,10 @@ export function useSyncData(options: UseSyncDataOptions): UseSyncDataReturn {
       return data as SyncStatus | null;
     },
     enabled: !!shopId && !!userId,
-    staleTime: 60 * 1000, // 1 minute
+    staleTime: 1 * 60 * 1000, // 1 minute - allow refetch after this time
     gcTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
   // Derived state

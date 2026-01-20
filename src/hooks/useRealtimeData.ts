@@ -97,6 +97,7 @@ export function useRealtimeData<T>(
     refetchIntervalInBackground: false, // Don't refetch when tab is not focused
     retry: 2, // Retry failed requests
     retryDelay: 1000, // Wait 1 second between retries
+    placeholderData: (previousData) => previousData, // Keep previous data while refetching to prevent UI flicker
   });
 
   // Invalidate và refetch khi shopId thay đổi
@@ -105,20 +106,14 @@ export function useRealtimeData<T>(
   useEffect(() => {
     if (shopId && userId && enabled) {
       // Nếu shopId thay đổi, reset cache của shop cũ và fetch data mới
-      if (prevShopIdRef.current !== shopId) {
-        console.log(`[useRealtimeData] Shop changed from ${prevShopIdRef.current} to ${shopId}, invalidating cache`);
+      if (prevShopIdRef.current !== shopId && prevShopIdRef.current !== undefined) {
+        console.log(`[useRealtimeData] Shop changed from ${prevShopIdRef.current} to ${shopId}, clearing cache and refetching`);
         // Remove cache của shop cũ
         queryClient.removeQueries({ 
           queryKey: ['realtime', tableName, prevShopIdRef.current, userId]
         });
-        prevShopIdRef.current = shopId;
-        
-        // Invalidate và refetch data cho shop mới
-        queryClient.invalidateQueries({ 
-          queryKey: ['realtime', tableName, shopId, userId],
-          refetchType: 'active'
-        });
       }
+      prevShopIdRef.current = shopId;
     }
   }, [shopId, userId, enabled, tableName, queryClient]);
 
@@ -197,7 +192,7 @@ export function useFlashSaleData(shopId: number, userId: string) {
   }>('apishopee_flash_sale_data', shopId, userId, {
     orderBy: 'start_time',
     orderAsc: false,
-    staleTime: Infinity, // Never stale - only refetch when invalidated by realtime
+    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
     refetchInterval: false, // Disabled - cron job handles sync
   });
 }
@@ -313,6 +308,10 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
   const [stats, setStats] = useState<ReviewStats>(DEFAULT_STATS);
   const [productMap, setProductMap] = useState<Map<number, { item_name: string; image_url_list: string[] }>>(new Map());
 
+  // Keep previous stats when shopId changes to prevent UI flicker
+  const prevStatsRef = useRef<ReviewStats>(DEFAULT_STATS);
+  const prevShopIdRef = useRef(shopId);
+
   // Query key for reviews
   const queryKey = ['reviews', shopId, userId];
 
@@ -386,6 +385,7 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
     setProductMap(products);
     setStats(reviewStats);
     setTotalCount(reviewStats.totalCount);
+    prevStatsRef.current = reviewStats; // Save for next render
 
     if (!reviewsResult.data || reviewsResult.data.length === 0) return [];
 
@@ -448,11 +448,27 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
     queryKey,
     queryFn: fetchReviews,
     enabled: !!shopId && !!userId,
-    staleTime: Infinity, // Never stale - only refetch when invalidated by realtime
+    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
     gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
     refetchOnWindowFocus: false,
-    refetchOnMount: false, // Don't refetch on mount if data exists
+    refetchOnMount: 'always', // Always refetch on mount to ensure fresh data when switching shops
+    placeholderData: (previousData) => previousData, // Keep previous data while refetching to prevent UI flicker
   });
+
+  // Reset state when shopId changes
+  useEffect(() => {
+    if (prevShopIdRef.current !== shopId && prevShopIdRef.current !== undefined) {
+      console.log(`[useReviewsData] Shop changed from ${prevShopIdRef.current} to ${shopId}, resetting state`);
+      // Keep previous stats temporarily to prevent UI flicker
+      // They will be updated when new data is fetched
+      setSyncStatus(null);
+      // Clear cache for old shop
+      queryClient.removeQueries({ 
+        queryKey: ['reviews', prevShopIdRef.current, userId]
+      });
+    }
+    prevShopIdRef.current = shopId;
+  }, [shopId, userId, queryClient]);
 
   // Fetch sync status on mount and when shopId changes
   useEffect(() => {
@@ -550,6 +566,7 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
     hasMore,
     loadingMore,
     totalCount,
-    stats,
+    // Return previous stats if current stats are empty (during refetch)
+    stats: stats.totalCount > 0 ? stats : prevStatsRef.current,
   };
 }

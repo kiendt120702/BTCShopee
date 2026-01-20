@@ -119,7 +119,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     const initializeAuth = async () => {
-      console.log('[Auth] Starting initialization...');
       try {
         const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
         
@@ -128,21 +127,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (sessionError) {
           console.error('[Auth] Error getting session:', sessionError);
         } else if (currentSession?.user) {
-          console.log('[Auth] Found existing session for user:', currentSession.user.id);
           setSession(currentSession);
           setUser(currentSession.user);
           // Load profile nhưng không block init
           loadProfile(currentSession.user.id).catch(err => {
             console.error('[Auth] Error loading profile during init:', err);
           });
-        } else {
-          console.log('[Auth] No existing session found');
         }
       } catch (err) {
         console.error('[Auth] Init error:', err);
       } finally {
         if (mounted) {
-          console.log('[Auth] Initialization complete, setting isLoading = false');
           setIsLoading(false);
           isInitializedRef.current = true;
         }
@@ -156,11 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, newSession) => {
         if (!mounted) return;
 
-        console.log('[Auth] Event:', event, 'Session:', !!newSession);
-
         switch (event) {
           case 'TOKEN_REFRESHED':
-            console.log('[Auth] Token refreshed successfully');
             if (newSession) {
               setSession(newSession);
               setUser(newSession.user);
@@ -244,30 +236,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    console.log('[Auth] signIn called for:', email);
     setError(null);
 
     try {
-      console.log('[Auth] Calling supabase.auth.signInWithPassword...');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      console.log('[Auth] signInWithPassword returned, error:', error, 'user:', data?.user?.id);
 
       if (error) throw error;
 
-      console.log('[Auth] Setting user and session...');
       setUser(data.user);
       setSession(data.session);
       
       // Load profile ngay sau khi login thành công (không await để không block)
       if (data.user) {
-        console.log('[Auth] Loading profile for user:', data.user.id);
         loadProfile(data.user.id);
       }
 
-      console.log('[Auth] signIn success, returning');
       return { success: true };
     } catch (err) {
       console.error('[Auth] signIn error:', err);

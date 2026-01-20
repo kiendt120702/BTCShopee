@@ -120,27 +120,27 @@ export interface UseAdsDataReturn {
     impression: number;
     clicks: number;
     ctr: number;
-    broad_order: number;
+    direct_order: number;
     broad_item_sold: number;
     broad_gmv: number;
     expense: number;
     broad_roas: number;
   } | null;
-  
+
   // Loading states
   loading: boolean;
   syncing: boolean;
   isFetching: boolean;
-  
+
   // Error
   error: string | null;
-  
+
   // Actions
   refetch: () => Promise<void>;
   syncFromAPI: () => Promise<{ success: boolean; message: string }>;
   backfillFromAPI: (daysBack?: number) => Promise<{ success: boolean; message: string }>;
   loadHourlyData: (campaignId: number) => Promise<void>;
-  
+
   // Metadata
   dataUpdatedAt: number | undefined;
   lastSyncAt: string | null;
@@ -172,7 +172,7 @@ function getDateRange(dateRange: 'today' | '7days' | '30days', selectedDate: Dat
 function getPreviousDateRange(dateRange: 'today' | '7days' | '30days', selectedDate: Date): { startDate: string; endDate: string } {
   const currentEnd = new Date(selectedDate);
   let currentStart = new Date(selectedDate);
-  
+
   if (dateRange === '7days') {
     currentStart.setDate(currentStart.getDate() - 6);
   } else if (dateRange === '30days') {
@@ -181,10 +181,10 @@ function getPreviousDateRange(dateRange: 'today' | '7days' | '30days', selectedD
 
   // Kỳ trước: cùng độ dài, ngay trước kỳ hiện tại
   const daysDiff = dateRange === 'today' ? 1 : dateRange === '7days' ? 7 : 30;
-  
+
   const prevEnd = new Date(currentStart);
   prevEnd.setDate(prevEnd.getDate() - 1); // Ngày trước ngày bắt đầu kỳ hiện tại
-  
+
   const prevStart = new Date(prevEnd);
   prevStart.setDate(prevStart.getDate() - daysDiff + 1);
 
@@ -361,11 +361,11 @@ export function useAdsData(
       const totals = data.reduce((acc, day) => ({
         impression: acc.impression + (day.impression || 0),
         clicks: acc.clicks + (day.clicks || 0),
-        broad_order: acc.broad_order + (day.broad_order || 0),
+        direct_order: acc.direct_order + (day.direct_order || 0),
         broad_item_sold: acc.broad_item_sold + (day.broad_item_sold || 0),
         broad_gmv: acc.broad_gmv + (day.broad_gmv || 0),
         expense: acc.expense + (day.expense || 0),
-      }), { impression: 0, clicks: 0, broad_order: 0, broad_item_sold: 0, broad_gmv: 0, expense: 0 });
+      }), { impression: 0, clicks: 0, direct_order: 0, broad_item_sold: 0, broad_gmv: 0, expense: 0 });
 
       const ctr = totals.impression > 0 ? (totals.clicks / totals.impression) * 100 : 0;
       const broad_roas = totals.expense > 0 ? totals.broad_gmv / totals.expense : 0;
@@ -374,7 +374,7 @@ export function useAdsData(
         impression: totals.impression,
         clicks: totals.clicks,
         ctr,
-        broad_order: totals.broad_order,
+        direct_order: totals.direct_order,
         broad_item_sold: totals.broad_item_sold,
         broad_gmv: totals.broad_gmv,
         expense: totals.expense,
@@ -400,10 +400,10 @@ export function useAdsData(
     queryKey: campaignsQueryKey,
     queryFn: fetchCampaigns,
     enabled: !!shopId && !!userId,
-    staleTime: Infinity, // Never stale - only refetch when invalidated by realtime
+    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
     gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
     refetchOnWindowFocus: false,
-    refetchOnMount: false, // Don't refetch on mount if data exists
+    refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
   // ALL Campaigns query (để tính tổng performance)
@@ -414,10 +414,10 @@ export function useAdsData(
     queryKey: allCampaignsQueryKey,
     queryFn: fetchAllCampaigns,
     enabled: !!shopId && !!userId,
-    staleTime: Infinity,
+    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
     gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
   // Performance query
@@ -431,10 +431,10 @@ export function useAdsData(
     queryKey: performanceQueryKey,
     queryFn: fetchDailyPerformance,
     enabled: !!shopId && !!userId,
-    staleTime: Infinity,
+    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
     gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
   // Previous period performance query (for comparison)
@@ -444,10 +444,10 @@ export function useAdsData(
     queryKey: prevPerformanceQueryKey,
     queryFn: fetchPreviousPerformance,
     enabled: !!shopId && !!userId,
-    staleTime: Infinity,
+    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
     gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
   // Shop-level performance query (tổng tất cả ads - chính xác hơn)
@@ -462,10 +462,10 @@ export function useAdsData(
     queryKey: shopLevelQueryKey,
     queryFn: fetchShopLevelPerformance,
     enabled: !!shopId && !!userId,
-    staleTime: Infinity,
+    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
     gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
   // ==================== COMBINE DATA ====================
@@ -503,7 +503,7 @@ export function useAdsData(
 
     // Calculate current period totals
     const current = calculateTotals(campPerf);
-    
+
     // Calculate previous period totals for comparison
     const previous = calculateTotals(prevCampPerf);
 
@@ -585,7 +585,7 @@ export function useAdsData(
       const result = res.data;
       if (result.success) {
         await fetchSyncStatus();
-        
+
         // Invalidate queries to trigger refetch
         queryClient.invalidateQueries({ queryKey: campaignsQueryKey });
         queryClient.invalidateQueries({ queryKey: performanceQueryKey });
@@ -628,7 +628,7 @@ export function useAdsData(
       const result = res.data;
       if (result.success) {
         await fetchSyncStatus();
-        
+
         // Invalidate queries to trigger refetch
         queryClient.invalidateQueries({ queryKey: campaignsQueryKey });
         queryClient.invalidateQueries({ queryKey: performanceQueryKey });

@@ -145,6 +145,8 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
   }, [dbStats]);
 
 
+
+
   return (
     <Card className="border-0 shadow-sm">
       <CardContent className="p-0">
@@ -214,7 +216,7 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
         )}
 
         {/* Rating Tabs */}
-        <div className="flex items-center border-b bg-white overflow-x-auto">
+        <div className="flex items-center border-b bg-white overflow-x-auto scrollbar-hide">
           {RATING_TABS.map((tab) => (
             <button
               key={tab.key}
@@ -342,6 +344,8 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
             Hiển thị {filteredReviews.length} / {totalCount > 0 ? totalCount : reviews.length} đánh giá
           </div>
         )}
+
+
       </CardContent>
     </Card>
   );

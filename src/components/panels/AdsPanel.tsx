@@ -176,7 +176,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
   // State
   const [loading, setLoading] = useState(false);
-  
+
   // Expanded campaign state
   const [expandedCampaignId, setExpandedCampaignId] = useState<number | null>(null);
 
@@ -211,21 +211,21 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
   // Sync từ Shopee API (manual trigger) - Gọi Edge Function
   const handleSyncFromAPI = async () => {
     if (syncing || loading) return;
-    
+
     setLoading(true);
     try {
       const result = await syncFromAPI();
-      
+
       if (result.success) {
-        toast({ 
-          title: 'Thành công', 
-          description: result.message 
+        toast({
+          title: 'Thành công',
+          description: result.message
         });
       } else {
-        toast({ 
-          title: 'Lỗi', 
-          description: result.message, 
-          variant: 'destructive' 
+        toast({
+          title: 'Lỗi',
+          description: result.message,
+          variant: 'destructive'
         });
       }
     } catch (e) {
@@ -241,13 +241,13 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
       setExpandedCampaignId(null);
     } else {
       setExpandedCampaignId(campaignId);
-      
+
       // Load hourly data từ DB nếu chưa có
       if (!campaignHourlyData[campaignId]) {
         try {
           // Format date cho DB query (YYYY-MM-DD)
           const dbDateStr = selectedDate.toISOString().split('T')[0];
-          
+
           // Query từ DB thay vì gọi API
           const { data, error } = await supabase
             .from('apishopee_ads_performance_hourly')
@@ -256,11 +256,11 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
             .eq('campaign_id', campaignId)
             .eq('performance_date', dbDateStr)
             .order('hour', { ascending: true });
-          
+
           if (error) {
             console.warn('[AdsPanel] Load hourly data from DB error:', error);
           }
-          
+
           // Normalize to ensure all 24 hours
           const normalizedData = Array.from({ length: 24 }, (_, hour) => {
             const existingData = (data || []).find((d: any) => d.hour === hour);
@@ -274,7 +274,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
               broad_item_sold: 0,
             };
           });
-          
+
           setCampaignHourlyData(prev => ({
             ...prev,
             [campaignId]: normalizedData
@@ -290,7 +290,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
             broad_gmv: 0,
             broad_item_sold: 0,
           }));
-          
+
           setCampaignHourlyData(prev => ({
             ...prev,
             [campaignId]: emptyData
@@ -335,9 +335,9 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
     for (const campaignId of autoAdsSelectedCampaigns) {
       const campaign = campaigns.find(c => c.campaign_id === campaignId);
       if (!campaign) continue;
-      
+
       const currentBudget = campaign.campaign_budget || 0;
-      
+
       if (action === 'increase' && budget <= currentBudget) {
         invalidCampaigns.push(`"${campaign.name || campaignId}" (hiện tại: ${new Intl.NumberFormat('vi-VN').format(currentBudget)}đ)`);
       } else if (action === 'decrease' && budget >= currentBudget) {
@@ -347,10 +347,10 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
     if (invalidCampaigns.length > 0) {
       const actionText = action === 'increase' ? 'lớn hơn' : 'nhỏ hơn';
-      toast({ 
-        title: 'Lỗi ngân sách', 
-        description: `Ngân sách nhập phải ${actionText} ngân sách hiện tại của: ${invalidCampaigns.slice(0, 3).join(', ')}${invalidCampaigns.length > 3 ? ` và ${invalidCampaigns.length - 3} chiến dịch khác` : ''}`, 
-        variant: 'destructive' 
+      toast({
+        title: 'Lỗi ngân sách',
+        description: `Ngân sách nhập phải ${actionText} ngân sách hiện tại của: ${invalidCampaigns.slice(0, 3).join(', ')}${invalidCampaigns.length > 3 ? ` và ${invalidCampaigns.length - 3} chiến dịch khác` : ''}`,
+        variant: 'destructive'
       });
       return;
     }
@@ -417,8 +417,8 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
       const failCount = results.filter(r => !r.success).length;
 
       const timeLabel = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-      const dateLabel = autoAdsDateType === 'daily' 
-        ? 'hàng ngày' 
+      const dateLabel = autoAdsDateType === 'daily'
+        ? 'hàng ngày'
         : `${autoAdsSpecificDates.length} ngày cụ thể`;
 
       if (successCount > 0 && failCount === 0) {
@@ -468,8 +468,8 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 
     try {
       // 1. Get Campaign ID List
-      const campaignIdListRes = await getCampaignIdList({ 
-        shop_id: shopId, 
+      const campaignIdListRes = await getCampaignIdList({
+        shop_id: shopId,
         ad_type: 'all',
         offset: 0,
         limit: 100
@@ -481,7 +481,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
         const campaignIds = campaignIdListRes.response.campaign_list
           .slice(0, 10) // Lấy 10 campaigns đầu tiên để test
           .map((c: any) => c.campaign_id);
-        
+
         const campaignSettingRes = await getCampaignSettingInfo({
           shop_id: shopId,
           campaign_id_list: campaignIds,
@@ -493,7 +493,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
       // 3. Get today's date for performance APIs
       const today = new Date();
       const dateStr = `${today.getDate().toString().padStart(2, '0')}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getFullYear()}`;
-      
+
       // 4. Get Hourly Performance (shop-level)
       try {
         const { data: hourlyPerf } = await supabase.functions.invoke('shopee-ads', {
@@ -512,7 +512,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
       const sevenDaysAgo = new Date(today);
       sevenDaysAgo.setDate(today.getDate() - 7);
       const startDateStr = `${sevenDaysAgo.getDate().toString().padStart(2, '0')}-${(sevenDaysAgo.getMonth() + 1).toString().padStart(2, '0')}-${sevenDaysAgo.getFullYear()}`;
-      
+
       try {
         const { data: dailyPerf } = await supabase.functions.invoke('shopee-ads', {
           body: {
@@ -552,8 +552,8 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
               disabled={isFetching}
               className={cn(
                 "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                dateRange === 'today' 
-                  ? "bg-blue-500 text-white shadow-md" 
+                dateRange === 'today'
+                  ? "bg-blue-500 text-white shadow-md"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200",
                 isFetching && "opacity-50 cursor-not-allowed"
               )}
@@ -565,8 +565,8 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
               disabled={isFetching}
               className={cn(
                 "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                dateRange === '7days' 
-                  ? "bg-blue-500 text-white shadow-md" 
+                dateRange === '7days'
+                  ? "bg-blue-500 text-white shadow-md"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200",
                 isFetching && "opacity-50 cursor-not-allowed"
               )}
@@ -578,8 +578,8 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
               disabled={isFetching}
               className={cn(
                 "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                dateRange === '30days' 
-                  ? "bg-blue-500 text-white shadow-md" 
+                dateRange === '30days'
+                  ? "bg-blue-500 text-white shadow-md"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200",
                 isFetching && "opacity-50 cursor-not-allowed"
               )}
@@ -599,11 +599,11 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
               )}
             />
             <span className="text-xs text-gray-400">
-              {dateRange === 'today' 
+              {dateRange === 'today'
                 ? `Ngày ${selectedDate.toLocaleDateString('vi-VN')}`
                 : dateRange === '7days'
-                ? `7 ngày đến ${selectedDate.toLocaleDateString('vi-VN')}`
-                : `30 ngày đến ${selectedDate.toLocaleDateString('vi-VN')}`
+                  ? `7 ngày đến ${selectedDate.toLocaleDateString('vi-VN')}`
+                  : `30 ngày đến ${selectedDate.toLocaleDateString('vi-VN')}`
               }
             </span>
             {isFetching && (
@@ -668,27 +668,27 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
             {(realtimeLoading || isFetching) && campaigns.length === 0 && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
                 <div className="flex flex-col items-center gap-2">
-                    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm text-gray-600 font-medium">Đang tải dữ liệu từ DB...</p>
-                  </div>
+                  <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-gray-600 font-medium">Đang tải dữ liệu từ DB...</p>
                 </div>
-              )}
-              <PerformanceOverviewFromCampaigns 
-                campaigns={allCampaigns}
-                dateRange={dateRange}
-                selectedDate={selectedDate}
-                shopLevelPerformance={shopLevelPerformance}
-              />
-              <CampaignList 
-                campaigns={campaigns} 
-                loading={realtimeLoading && campaigns.length === 0} 
-                dateRange={dateRange}
-                expandedCampaignId={expandedCampaignId}
-                campaignHourlyData={campaignHourlyData}
-                onToggleExpand={toggleCampaignExpansion}
-                selectedDate={selectedDate}
-              />
-            </div>
+              </div>
+            )}
+            <PerformanceOverviewFromCampaigns
+              campaigns={allCampaigns}
+              dateRange={dateRange}
+              selectedDate={selectedDate}
+              shopLevelPerformance={shopLevelPerformance}
+            />
+            <CampaignList
+              campaigns={campaigns}
+              loading={realtimeLoading && campaigns.length === 0}
+              dateRange={dateRange}
+              expandedCampaignId={expandedCampaignId}
+              campaignHourlyData={campaignHourlyData}
+              onToggleExpand={toggleCampaignExpansion}
+              selectedDate={selectedDate}
+            />
+          </div>
 
         </div>
 
@@ -790,7 +790,7 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                                 </span>
                               )}
                               <span className="text-xs text-orange-600 font-medium">
-                                NS: {campaign.campaign_budget 
+                                NS: {campaign.campaign_budget
                                   ? new Intl.NumberFormat('vi-VN').format(campaign.campaign_budget) + 'đ'
                                   : '--'}
                               </span>
@@ -956,13 +956,13 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                     const budgetValue = autoAdsBudget ? parseFloat(autoAdsBudget.replace(/\./g, '')) : 0;
                     const hasBudget = budgetValue >= 100000;
                     const hasValidDates = autoAdsDateType !== 'specific' || autoAdsSpecificDates.length > 0;
-                    
+
                     const missing: string[] = [];
                     if (!hasCampaigns) missing.push('chiến dịch');
                     if (!hasValidDates) missing.push('ngày áp dụng');
                     if (!hasTimeSlot) missing.push('khung giờ');
                     if (!hasBudget) missing.push('ngân sách (tối thiểu 100.000đ)');
-                    
+
                     if (missing.length === 0) {
                       const slot = autoAdsTimeSlots[0];
                       const hour = Math.floor(slot / 2);
@@ -982,8 +982,8 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                   })()}
                 </div>
                 <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={() => {
                       setShowAutoAdsDialog(false);
                       setAutoAdsSelectedCampaigns([]);
@@ -996,11 +996,11 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                   >
                     Hủy
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => handleAutoAds('decrease')}
                     disabled={
                       autoAdsProcessing !== null ||
-                      autoAdsSelectedCampaigns.length === 0 || 
+                      autoAdsSelectedCampaigns.length === 0 ||
                       autoAdsTimeSlots.length === 0 ||
                       !autoAdsBudget ||
                       parseFloat(autoAdsBudget.replace(/\./g, '')) < 100000 ||
@@ -1018,11 +1018,11 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
                     )}
                     Giảm
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => handleAutoAds('increase')}
                     disabled={
                       autoAdsProcessing !== null ||
-                      autoAdsSelectedCampaigns.length === 0 || 
+                      autoAdsSelectedCampaigns.length === 0 ||
                       autoAdsTimeSlots.length === 0 ||
                       !autoAdsBudget ||
                       parseFloat(autoAdsBudget.replace(/\./g, '')) < 100000 ||
@@ -1052,11 +1052,11 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
 // ==================== SUB-COMPONENTS ====================
 
 // Component hiển thị chi tiết theo giờ với carousel (8 ô/hàng, mũi tên qua lại)
-function HourlyPerformanceCarousel({ 
-  hourlyData, 
-  selectedDate, 
-  dateRange 
-}: { 
+function HourlyPerformanceCarousel({
+  hourlyData,
+  selectedDate,
+  dateRange
+}: {
   hourlyData: any[];
   selectedDate: Date;
   dateRange: 'today' | '7days' | '30days';
@@ -1088,7 +1088,7 @@ function HourlyPerformanceCarousel({
           )}
         </div>
       </div>
-      
+
       {/* Carousel với mũi tên */}
       <div className="flex items-center gap-2">
         {/* Mũi tên trái */}
@@ -1097,8 +1097,8 @@ function HourlyPerformanceCarousel({
           disabled={currentPage === 0}
           className={cn(
             "p-2 rounded-full border transition-all flex-shrink-0",
-            currentPage === 0 
-              ? "bg-gray-100 text-gray-300 cursor-not-allowed" 
+            currentPage === 0
+              ? "bg-gray-100 text-gray-300 cursor-not-allowed"
               : "bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300"
           )}
         >
@@ -1113,14 +1113,14 @@ function HourlyPerformanceCarousel({
             const hourNum = hour.hour ?? 0;
             const roas = hour.expense > 0 ? hour.broad_gmv / hour.expense : 0;
             const hasData = hour.expense > 0 || hour.broad_gmv > 0;
-            
+
             return (
-              <div 
+              <div
                 key={hourNum}
                 className={cn(
                   "p-2 rounded-lg border text-xs transition-all",
-                  hasData 
-                    ? "bg-white border-blue-300 shadow-sm hover:shadow-md" 
+                  hasData
+                    ? "bg-white border-blue-300 shadow-sm hover:shadow-md"
                     : "bg-gray-50 border-gray-200 opacity-60"
                 )}
                 title={hasData ? `Giờ ${hourNum}:00 - Có hoạt động` : `Giờ ${hourNum}:00 - Không có hoạt động`}
@@ -1175,8 +1175,8 @@ function HourlyPerformanceCarousel({
           disabled={currentPage === totalPages - 1}
           className={cn(
             "p-2 rounded-full border transition-all flex-shrink-0",
-            currentPage === totalPages - 1 
-              ? "bg-gray-100 text-gray-300 cursor-not-allowed" 
+            currentPage === totalPages - 1
+              ? "bg-gray-100 text-gray-300 cursor-not-allowed"
               : "bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300"
           )}
         >
@@ -1211,7 +1211,7 @@ function HourlyPerformanceCarousel({
   );
 }
 
-function PerformanceOverviewFromCampaigns({ campaigns, dateRange, selectedDate, shopLevelPerformance }: { 
+function PerformanceOverviewFromCampaigns({ campaigns, dateRange, selectedDate, shopLevelPerformance }: {
   campaigns: CampaignWithPerformance[];
   dateRange: 'today' | '7days' | '30days';
   selectedDate: Date;
@@ -1219,7 +1219,7 @@ function PerformanceOverviewFromCampaigns({ campaigns, dateRange, selectedDate, 
     impression: number;
     clicks: number;
     ctr: number;
-    broad_order: number;
+    direct_order: number;
     broad_item_sold: number;
     broad_gmv: number;
     expense: number;
@@ -1230,14 +1230,14 @@ function PerformanceOverviewFromCampaigns({ campaigns, dateRange, selectedDate, 
   // Không fallback về campaign-level để tránh dữ liệu không nhất quán
   const currentTotals = useMemo(() => {
     if (!shopLevelPerformance) {
-      return { impression: 0, clicks: 0, ctr: 0, broad_order: 0, broad_item_sold: 0, broad_gmv: 0, expense: 0, broad_roas: 0 };
+      return { impression: 0, clicks: 0, ctr: 0, direct_order: 0, broad_item_sold: 0, broad_gmv: 0, expense: 0, broad_roas: 0 };
     }
 
     return {
       impression: shopLevelPerformance.impression,
       clicks: shopLevelPerformance.clicks,
       ctr: shopLevelPerformance.ctr,
-      broad_order: shopLevelPerformance.broad_order,
+      direct_order: shopLevelPerformance.direct_order,
       broad_item_sold: shopLevelPerformance.broad_item_sold,
       broad_gmv: shopLevelPerformance.broad_gmv,
       expense: shopLevelPerformance.expense,
@@ -1251,17 +1251,17 @@ function PerformanceOverviewFromCampaigns({ campaigns, dateRange, selectedDate, 
     return v.toString();
   };
 
-  const periodLabel = dateRange === 'today' 
+  const periodLabel = dateRange === 'today'
     ? selectedDate.toLocaleDateString('vi-VN')
     : dateRange === '7days'
-    ? '7 ngày đến ' + selectedDate.toLocaleDateString('vi-VN')
-    : '30 ngày đến ' + selectedDate.toLocaleDateString('vi-VN');
+      ? '7 ngày đến ' + selectedDate.toLocaleDateString('vi-VN')
+      : '30 ngày đến ' + selectedDate.toLocaleDateString('vi-VN');
 
   const metrics = [
     { label: 'Số lượt xem', value: currentTotals.impression, format: formatCompact, color: 'blue' },
     { label: 'Số lượt click', value: currentTotals.clicks, format: formatCompact, color: 'indigo' },
     { label: 'Tỉ lệ click (CTR)', value: currentTotals.ctr, format: (v: number) => v.toFixed(2) + '%', color: 'purple' },
-    { label: 'Số đơn hàng', value: currentTotals.broad_order, format: (v: number) => v.toString(), color: 'green' },
+    { label: 'Số đơn hàng', value: currentTotals.direct_order, format: (v: number) => v.toString(), color: 'green' },
     { label: 'Sản phẩm đã bán', value: currentTotals.broad_item_sold, format: (v: number) => v.toString(), color: 'teal' },
     { label: 'Doanh số (GMV)', value: currentTotals.broad_gmv, format: (v: number) => 'đ' + formatCompact(v), color: 'orange' },
     { label: 'Chi phí', value: currentTotals.expense, format: (v: number) => 'đ' + formatCompact(v), color: 'red' },
@@ -1307,8 +1307,8 @@ function PerformanceOverviewFromCampaigns({ campaigns, dateRange, selectedDate, 
   );
 }
 
-function PerformanceOverview({ data, dateRange, selectedDate }: { 
-  data: PerformanceData; 
+function PerformanceOverview({ data, dateRange, selectedDate }: {
+  data: PerformanceData;
   dateRange: 'today' | '7days' | '30days';
   selectedDate: Date;
 }) {
@@ -1317,11 +1317,11 @@ function PerformanceOverview({ data, dateRange, selectedDate }: {
     // Nếu là "Hôm nay", dùng hourly data
     // Nếu là "7 ngày" hoặc "30 ngày", dùng daily data
     const sourceData = dateRange === 'today' ? data.hourly : data.daily;
-    
+
     if (!sourceData || sourceData.length === 0) {
       return { impression: 0, clicks: 0, ctr: 0, orders: 0, itemsSold: 0, conversions: 0, gmv: 0, expense: 0, roas: 0 };
     }
-    
+
     const totals = sourceData.reduce((acc, item) => ({
       impression: acc.impression + (item.impression || 0),
       clicks: acc.clicks + (item.clicks || 0),
@@ -1355,11 +1355,11 @@ function PerformanceOverview({ data, dateRange, selectedDate }: {
   };
 
   // Determine label based on dateRange
-  const periodLabel = dateRange === 'today' 
+  const periodLabel = dateRange === 'today'
     ? selectedDate.toLocaleDateString('vi-VN')
     : dateRange === '7days'
-    ? '7 ngày đến ' + selectedDate.toLocaleDateString('vi-VN')
-    : '30 ngày đến ' + selectedDate.toLocaleDateString('vi-VN');
+      ? '7 ngày đến ' + selectedDate.toLocaleDateString('vi-VN')
+      : '30 ngày đến ' + selectedDate.toLocaleDateString('vi-VN');
 
   const metrics = [
     { label: 'Lượt xem', value: currentTotals.impression, format: formatCompact, color: 'blue' },
@@ -1411,17 +1411,17 @@ function PerformanceOverview({ data, dateRange, selectedDate }: {
   );
 }
 
-function CampaignList({ 
-  campaigns, 
-  loading, 
+function CampaignList({
+  campaigns,
+  loading,
   dateRange,
   expandedCampaignId,
   campaignHourlyData,
   onToggleExpand,
   selectedDate
-}: { 
-  campaigns: CampaignWithPerformance[]; 
-  loading: boolean; 
+}: {
+  campaigns: CampaignWithPerformance[];
+  loading: boolean;
   dateRange: 'today' | '7days' | '30days';
   expandedCampaignId: number | null;
   campaignHourlyData: Record<number, any[]>;
@@ -1468,139 +1468,139 @@ function CampaignList({
           const perf = c.performance;
           const isExpanded = expandedCampaignId === c.campaign_id;
           const hourlyData = campaignHourlyData[c.campaign_id];
-          
+
           return (
             <div key={c.campaign_id}>
-              <div 
+              <div
                 className={cn(
                   "grid grid-cols-[40px_minmax(250px,1fr)_100px_90px_110px_100px_90px_90px_90px] gap-3 px-4 py-3 items-start hover:bg-gray-50 transition-colors cursor-pointer",
                   isExpanded && "bg-blue-50"
                 )}
                 onClick={() => onToggleExpand(c.campaign_id)}
               >
-              {/* Checkbox */}
-              <div className="pt-2" onClick={(e) => e.stopPropagation()}>
-                <input type="checkbox" className="w-4 h-4 rounded border-gray-300" />
-              </div>
+                {/* Checkbox */}
+                <div className="pt-2" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" className="w-4 h-4 rounded border-gray-300" />
+                </div>
 
-              {/* Campaign Info */}
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-sm leading-tight flex-1" title={c.name || undefined}>
-                    {truncatedName || `Campaign ${c.campaign_id}`}
-                  </p>
-                  {isExpanded ? (
-                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                {/* Campaign Info */}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sm leading-tight flex-1" title={c.name || undefined}>
+                      {truncatedName || `Campaign ${c.campaign_id}`}
+                    </p>
+                    {isExpanded ? (
+                      <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className={cn(
+                      "text-xs px-2 py-0.5 rounded",
+                      c.status === 'ongoing' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                    )}>
+                      {STATUS_MAP[c.status || '']?.label || '-'}
+                    </span>
+                    {!isExpanded && (
+                      <span className="text-[10px] text-gray-400 italic">Click để xem chi tiết theo giờ</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Budget */}
+                <div className="text-right pt-2">
+                  <div className="text-sm font-semibold">
+                    {c.campaign_budget ? formatPrice(c.campaign_budget) : '-'}
+                  </div>
+                  <div className="text-xs text-gray-400">hàng ngày</div>
+                </div>
+
+                {/* Target ROAS */}
+                <div className="text-right pt-2">
+                  <div className="text-sm font-semibold">
+                    {c.roas_target ? c.roas_target.toFixed(1) : '-'}
+                  </div>
+                </div>
+
+                {/* Expense */}
+                <div className="text-right pt-2">
+                  <div className="text-sm font-semibold">
+                    {perf ? formatPrice(perf.expense) : '₫0'}
+                  </div>
+                  {c.comparison && c.comparison.expense_change !== 0 && (
+                    <div className={cn(
+                      "text-xs font-medium",
+                      c.comparison.expense_change > 0 ? "text-green-500" : "text-red-500"
+                    )}>
+                      {c.comparison.expense_change > 0 ? '+' : ''}{c.comparison.expense_change.toFixed(1)}%
+                    </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className={cn(
-                    "text-xs px-2 py-0.5 rounded",
-                    c.status === 'ongoing' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                  )}>
-                    {STATUS_MAP[c.status || '']?.label || '-'}
-                  </span>
-                  {!isExpanded && (
-                    <span className="text-[10px] text-gray-400 italic">Click để xem chi tiết theo giờ</span>
+
+                {/* GMV */}
+                <div className="text-right pt-2">
+                  <div className="text-sm font-semibold">
+                    {perf ? formatPrice(perf.gmv) : '₫0'}
+                  </div>
+                  {c.comparison && c.comparison.gmv_change !== 0 && (
+                    <div className={cn(
+                      "text-xs font-medium",
+                      c.comparison.gmv_change > 0 ? "text-green-500" : "text-red-500"
+                    )}>
+                      {c.comparison.gmv_change > 0 ? '+' : ''}{c.comparison.gmv_change.toFixed(1)}%
+                    </div>
                   )}
                 </div>
-              </div>
 
-              {/* Budget */}
-              <div className="text-right pt-2">
-                <div className="text-sm font-semibold">
-                  {c.campaign_budget ? formatPrice(c.campaign_budget) : '-'}
-                </div>
-                <div className="text-xs text-gray-400">hàng ngày</div>
-              </div>
-
-              {/* Target ROAS */}
-              <div className="text-right pt-2">
-                <div className="text-sm font-semibold">
-                  {c.roas_target ? c.roas_target.toFixed(1) : '-'}
-                </div>
-              </div>
-
-              {/* Expense */}
-              <div className="text-right pt-2">
-                <div className="text-sm font-semibold">
-                  {perf ? formatPrice(perf.expense) : '₫0'}
-                </div>
-                {c.comparison && c.comparison.expense_change !== 0 && (
-                  <div className={cn(
-                    "text-xs font-medium",
-                    c.comparison.expense_change > 0 ? "text-green-500" : "text-red-500"
-                  )}>
-                    {c.comparison.expense_change > 0 ? '+' : ''}{c.comparison.expense_change.toFixed(1)}%
+                {/* ROAS */}
+                <div className="text-right pt-2">
+                  <div className="text-sm font-semibold">
+                    {perf && perf.roas > 0 ? perf.roas.toFixed(2) : '0.00'}
                   </div>
-                )}
-              </div>
-
-              {/* GMV */}
-              <div className="text-right pt-2">
-                <div className="text-sm font-semibold">
-                  {perf ? formatPrice(perf.gmv) : '₫0'}
+                  {c.comparison && c.comparison.roas_change !== 0 && (
+                    <div className={cn(
+                      "text-xs font-medium",
+                      c.comparison.roas_change > 0 ? "text-green-500" : "text-red-500"
+                    )}>
+                      {c.comparison.roas_change > 0 ? '+' : ''}{c.comparison.roas_change.toFixed(1)}%
+                    </div>
+                  )}
                 </div>
-                {c.comparison && c.comparison.gmv_change !== 0 && (
-                  <div className={cn(
-                    "text-xs font-medium",
-                    c.comparison.gmv_change > 0 ? "text-green-500" : "text-red-500"
-                  )}>
-                    {c.comparison.gmv_change > 0 ? '+' : ''}{c.comparison.gmv_change.toFixed(1)}%
-                  </div>
-                )}
-              </div>
 
-              {/* ROAS */}
-              <div className="text-right pt-2">
-                <div className="text-sm font-semibold">
-                  {perf && perf.roas > 0 ? perf.roas.toFixed(2) : '0.00'}
-                </div>
-                {c.comparison && c.comparison.roas_change !== 0 && (
-                  <div className={cn(
-                    "text-xs font-medium",
-                    c.comparison.roas_change > 0 ? "text-green-500" : "text-red-500"
-                  )}>
-                    {c.comparison.roas_change > 0 ? '+' : ''}{c.comparison.roas_change.toFixed(1)}%
+                {/* Clicks */}
+                <div className="text-right pt-2">
+                  <div className="text-sm font-semibold">
+                    {perf ? perf.clicks : '0'}
                   </div>
-                )}
-              </div>
+                  {c.comparison && c.comparison.clicks_change !== 0 && (
+                    <div className={cn(
+                      "text-xs font-medium",
+                      c.comparison.clicks_change > 0 ? "text-green-500" : "text-red-500"
+                    )}>
+                      {c.comparison.clicks_change > 0 ? '+' : ''}{c.comparison.clicks_change.toFixed(1)}%
+                    </div>
+                  )}
+                </div>
 
-              {/* Clicks */}
-              <div className="text-right pt-2">
-                <div className="text-sm font-semibold">
-                  {perf ? perf.clicks : '0'}
-                </div>
-                {c.comparison && c.comparison.clicks_change !== 0 && (
-                  <div className={cn(
-                    "text-xs font-medium",
-                    c.comparison.clicks_change > 0 ? "text-green-500" : "text-red-500"
-                  )}>
-                    {c.comparison.clicks_change > 0 ? '+' : ''}{c.comparison.clicks_change.toFixed(1)}%
+                {/* ACOS */}
+                <div className="text-right pt-2">
+                  <div className="text-sm font-semibold">
+                    {perf && perf.acos > 0 ? perf.acos.toFixed(1) + '%' : '0%'}
                   </div>
-                )}
-              </div>
-
-              {/* ACOS */}
-              <div className="text-right pt-2">
-                <div className="text-sm font-semibold">
-                  {perf && perf.acos > 0 ? perf.acos.toFixed(1) + '%' : '0%'}
+                  {c.comparison && c.comparison.acos_change !== 0 && (
+                    <div className={cn(
+                      "text-xs font-medium",
+                      c.comparison.acos_change > 0 ? "text-green-500" : "text-red-500"
+                    )}>
+                      {c.comparison.acos_change > 0 ? '+' : ''}{c.comparison.acos_change.toFixed(1)}%
+                    </div>
+                  )}
                 </div>
-                {c.comparison && c.comparison.acos_change !== 0 && (
-                  <div className={cn(
-                    "text-xs font-medium",
-                    c.comparison.acos_change > 0 ? "text-green-500" : "text-red-500"
-                  )}>
-                    {c.comparison.acos_change > 0 ? '+' : ''}{c.comparison.acos_change.toFixed(1)}%
-                  </div>
-                )}
-              </div>
               </div>
 
               {/* Hourly Performance Details */}
@@ -1612,7 +1612,7 @@ function CampaignList({
                       Đang tải dữ liệu theo giờ...
                     </div>
                   ) : (
-                    <HourlyPerformanceCarousel 
+                    <HourlyPerformanceCarousel
                       hourlyData={hourlyData}
                       selectedDate={selectedDate}
                       dateRange={dateRange}
@@ -1709,10 +1709,10 @@ function AdsScheduleHistory({
                     {s.days_of_week && s.days_of_week.length === 7
                       ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded">Hàng ngày</span>
                       : s.specific_dates && s.specific_dates.length > 0
-                      ? <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded" title={s.specific_dates.join(', ')}>
+                        ? <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded" title={s.specific_dates.join(', ')}>
                           {s.specific_dates.length} ngày
                         </span>
-                      : '-'}
+                        : '-'}
                   </div>
                   <div className="text-sm text-right font-medium text-orange-600">
                     {formatPrice(s.budget)}
@@ -1761,10 +1761,10 @@ function AdsScheduleHistory({
               {logs.map(l => {
                 const isExpanded = expandedLogId === l.id;
                 const hasFailed = l.status === 'failed';
-                
+
                 return (
                   <div key={l.id}>
-                    <div 
+                    <div
                       className={cn(
                         "grid grid-cols-[1fr_100px_100px_150px] gap-2 px-4 py-2.5 items-center transition-colors",
                         hasFailed ? "hover:bg-red-50 cursor-pointer" : "hover:bg-gray-50",
@@ -1776,10 +1776,10 @@ function AdsScheduleHistory({
                         <div className="flex items-center gap-2">
                           <p className="text-sm truncate font-medium">{l.campaign_name || 'Campaign ' + l.campaign_id}</p>
                           {hasFailed && (
-                            <svg 
-                              className={cn("w-4 h-4 text-red-500 transition-transform flex-shrink-0", isExpanded && "rotate-180")} 
-                              fill="none" 
-                              stroke="currentColor" 
+                            <svg
+                              className={cn("w-4 h-4 text-red-500 transition-transform flex-shrink-0", isExpanded && "rotate-180")}
+                              fill="none"
+                              stroke="currentColor"
                               viewBox="0 0 24 24"
                             >
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1795,8 +1795,8 @@ function AdsScheduleHistory({
                         <span className={cn(
                           "text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1",
                           l.status === 'success' ? 'bg-green-100 text-green-700' :
-                          l.status === 'failed' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-700'
+                            l.status === 'failed' ? 'bg-red-100 text-red-700' :
+                              'bg-gray-100 text-gray-700'
                         )}>
                           {l.status === 'success' ? (
                             <>
@@ -1821,7 +1821,7 @@ function AdsScheduleHistory({
                         {formatDateTime(l.executed_at)}
                       </div>
                     </div>
-                    
+
                     {/* Chi tiết lỗi khi expand */}
                     {isExpanded && hasFailed && l.error_message && (
                       <div className="px-4 py-3 bg-red-50 border-t border-red-100">

@@ -23,17 +23,28 @@ const routeNames: Record<string, string> = {
   'profile': 'Hồ sơ',
   'shops': 'Quản lý Shop',
   'users': 'Quản lý người dùng',
+  'analytics': 'Phân tích',
 };
 
 // Parent route names for nested routes
 const parentRouteNames: Record<string, string> = {
+  'orders': 'Đơn hàng',
+  'products': 'Sản phẩm',
   'reviews': 'Đánh giá',
   'flash-sale': 'Flash Sale',
   'settings': 'Cài đặt',
+  'ads': 'Quảng cáo',
+  'analytics': 'Phân tích',
 };
 
 // Child route display names (when showing as last item)
 const childRouteNames: Record<string, Record<string, string>> = {
+  'orders': {
+    '': 'Danh sách đơn hàng',
+  },
+  'products': {
+    '': 'Danh sách sản phẩm',
+  },
   'reviews': {
     '': 'Quản lý đánh giá',
     'auto-reply': 'Đánh giá tự động',
@@ -42,6 +53,15 @@ const childRouteNames: Record<string, Record<string, string>> = {
     '': 'Danh sách',
     'auto-setup': 'Tự động cài FS',
     'detail': 'Chi tiết',
+  },
+  'ads': {
+    '': 'Quản lý quảng cáo',
+    'history': 'Lịch sử',
+  },
+  'analytics': {
+    'orders': 'Phân tích đơn hàng',
+    'reviews': 'Phân tích đánh giá',
+    'campaigns': 'Phân tích chiến dịch',
   },
 };
 
@@ -81,9 +101,11 @@ function getSegmentName(segment: string, prevSegment?: string, isLast?: boolean,
 // Routes that need a virtual parent in breadcrumb
 // e.g., /reviews should show: Trang chủ > Đánh giá > Quản lý đánh giá
 const virtualParentRoutes: Record<string, { parentName: string; childName: string }> = {
+  'orders': { parentName: 'Đơn hàng', childName: 'Danh sách đơn hàng' },
+  'products': { parentName: 'Sản phẩm', childName: 'Danh sách sản phẩm' },
   'reviews': { parentName: 'Đánh giá', childName: 'Quản lý đánh giá' },
   'flash-sale': { parentName: 'Flash Sale', childName: 'Danh sách' },
-  'ads': { parentName: 'Quảng cáo', childName: 'Quản lý' },
+  'ads': { parentName: 'Quảng cáo', childName: 'Quản lý quảng cáo' },
 };
 
 interface BreadcrumbProps {

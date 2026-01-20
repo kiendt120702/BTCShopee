@@ -154,7 +154,6 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
               await storeToken(dbToken);
               setToken(dbToken);
               setSelectedShopId(shopData.shop_id);
-              console.log('[ShopeeAuth] Shop loaded:', shopData.shop_id);
               return true;
             }
           }
@@ -206,8 +205,6 @@ export function ShopeeAuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return;
-        
-        console.log('[ShopeeAuth] Auth event:', event, 'User:', session?.user?.email);
 
         if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
           return;

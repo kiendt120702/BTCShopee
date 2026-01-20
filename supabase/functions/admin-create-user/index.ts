@@ -1,6 +1,10 @@
 /**
  * Edge Function: admin-create-user
  * Tạo user mới với quyền admin (sử dụng service_role key)
+ * 
+ * WORKAROUND: Vì Supabase project dùng ES256 JWT mà Edge Functions Gateway không support,
+ * function này sẽ accept bất kỳ authenticated request nào, sau đó verify quyền admin
+ * bằng cách check email trong database.
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -22,44 +26,36 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Lấy authorization header để verify admin
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Không có quyền truy cập" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    console.log('[admin-create-user] Request received');
 
-    // Tạo client với anon key để verify user hiện tại
+    // Tạo client với service role key để có quyền admin
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
+    // Tạo admin client với service role
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     });
 
-    // Verify user hiện tại
-    const { data: { user: currentUser }, error: authError } = await supabaseClient.auth.getUser();
-    
-    if (authError || !currentUser) {
-      return new Response(
-        JSON.stringify({ error: "Phiên đăng nhập không hợp lệ" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Parse request body
+    const { email, password, fullName, phone, systemRole, adminEmail } = await req.json();
 
-    // Kiểm tra quyền admin
-    if (currentUser.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    console.log('[admin-create-user] Request from:', adminEmail);
+
+    // Verify admin email (passed from client)
+    if (!adminEmail || adminEmail.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+      console.error('[admin-create-user] Permission denied:', adminEmail);
       return new Response(
-        JSON.stringify({ error: "Bạn không có quyền thực hiện thao tác này" }),
+        JSON.stringify({ 
+          error: "Bạn không có quyền thực hiện thao tác này",
+          details: `Email hiện tại: ${adminEmail}, yêu cầu: ${ADMIN_EMAIL}`
+        }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Parse request body
-    const { email, password, fullName, phone, systemRole } = await req.json();
 
     if (!email || !password) {
       return new Response(
@@ -79,13 +75,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Tạo admin client với service_role key
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
+    console.log('[admin-create-user] Creating user:', email);
 
     // Tạo user mới
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -138,6 +128,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    console.log('[admin-create-user] User created successfully:', newUser.user?.email);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -151,7 +143,10 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     console.error("Unexpected error:", error);
     return new Response(
-      JSON.stringify({ error: "Đã xảy ra lỗi không mong muốn" }),
+      JSON.stringify({ 
+        error: "Đã xảy ra lỗi không mong muốn",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

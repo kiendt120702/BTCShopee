@@ -17,6 +17,7 @@ import {
   Star,
   Megaphone,
   Clock,
+  BarChart3,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -58,16 +59,20 @@ export const menuItems: MenuItem[] = [
   {
     title: 'Đơn hàng',
     icon: ShoppingCart,
-    path: '/orders',
     permissionKey: 'orders',
     description: 'Quản lý đơn hàng',
+    children: [
+      { title: 'Danh sách đơn hàng', icon: ShoppingCart, path: '/orders', permissionKey: 'orders' },
+    ],
   },
   {
     title: 'Sản phẩm',
     icon: Package,
-    path: '/products',
     permissionKey: 'products',
     description: 'Quản lý sản phẩm',
+    children: [
+      { title: 'Danh sách sản phẩm', icon: Package, path: '/products', permissionKey: 'products' },
+    ],
   },
   {
     title: 'Đánh giá',
@@ -100,28 +105,39 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
+    title: 'Phân tích',
+    icon: BarChart3,
+    permissionKey: 'analytics',
+    description: 'Phân tích dữ liệu',
+    children: [
+      { title: 'Đơn hàng', icon: ShoppingCart, path: '/analytics/orders', permissionKey: 'analytics' },
+      { title: 'Đánh giá', icon: Star, path: '/analytics/reviews', permissionKey: 'analytics' },
+      { title: 'Chiến dịch', icon: Megaphone, path: '/analytics/campaigns', permissionKey: 'analytics' },
+    ],
+  },
+  {
     title: 'Cài đặt',
     icon: Settings,
     children: [
-      { 
-        title: 'Thông tin cá nhân', 
-        icon: User, 
-        path: '/settings/profile', 
-        permissionKey: 'settings/profile' 
+      {
+        title: 'Thông tin cá nhân',
+        icon: User,
+        path: '/settings/profile',
+        permissionKey: 'settings/profile'
       },
-      { 
-        title: 'Quản lý Shop', 
-        icon: Store, 
-        path: '/settings/shops', 
-        permissionKey: 'settings/shops', 
-        adminOnly: true 
+      {
+        title: 'Quản lý Shop',
+        icon: Store,
+        path: '/settings/shops',
+        permissionKey: 'settings/shops',
+        adminOnly: true
       },
-      { 
-        title: 'Quản lý người dùng', 
-        icon: Users, 
-        path: '/settings/users', 
-        permissionKey: 'settings/users', 
-        adminOnly: true 
+      {
+        title: 'Quản lý người dùng',
+        icon: Users,
+        path: '/settings/users',
+        permissionKey: 'settings/users',
+        adminOnly: true
       },
     ],
   },

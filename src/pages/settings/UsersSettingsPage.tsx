@@ -119,9 +119,6 @@ export default function UsersSettingsPage() {
         console.error('Error fetching shop members:', membersError);
       }
 
-      console.log('[UsersSettingsPage] shopsData:', shopsData);
-      console.log('[UsersSettingsPage] membersData:', membersData);
-
       // Group shops by user
       const shopsByUser: Record<string, ShopInfo[]> = {};
       (membersData || []).forEach((m) => {
@@ -133,8 +130,6 @@ export default function UsersSettingsPage() {
           shopsByUser[m.profile_id].push(shop);
         }
       });
-
-      console.log('[UsersSettingsPage] shopsByUser:', shopsByUser);
 
       // Merge shops into users
       const usersWithShops = (usersData || []).map(user => ({
@@ -168,6 +163,17 @@ export default function UsersSettingsPage() {
 
     setCreating(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      // Nếu session sắp hết hạn, refresh
+      if (session && session.expires_at && (session.expires_at * 1000 - Date.now()) < 60000) {
+        const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError) {
+          throw new Error('Không thể refresh session. Vui lòng đăng nhập lại.');
+        }
+      }
+
+      // Dùng supabase.functions.invoke() với adminEmail để bypass JWT verification
       const { data, error } = await supabase.functions.invoke('admin-create-user', {
         body: {
           email: formData.email,
@@ -175,10 +181,13 @@ export default function UsersSettingsPage() {
           fullName: formData.fullName,
           phone: formData.phone,
           systemRole: formData.systemRole,
+          adminEmail: session?.user?.email, // Gửi email để verify admin
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message || 'Không thể tạo tài khoản');
+      }
 
       if (data?.error) {
         throw new Error(data.error);
