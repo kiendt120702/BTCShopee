@@ -30,6 +30,18 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
     }
   };
 
+  // Khóa scroll body khi sidebar mở trên mobile
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileOpen]);
+
 
   // Kiểm tra user hiện tại có phải admin không
   const isSystemAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
@@ -119,7 +131,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
 
       <aside
         className={cn(
-          'fixed left-0 top-0 h-screen bg-white border-r border-slate-200 transition-all duration-300 z-50 flex flex-col',
+          'fixed left-0 top-0 h-dvh bg-white border-r border-slate-200 transition-all duration-300 z-50 flex flex-col',
           collapsed ? 'md:w-16' : 'md:w-64',
           'w-64', // Mobile width
           mobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:translate-x-0'
@@ -242,8 +254,8 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
         })}
       </nav>
 
-      {/* Toggle Collapse Button */}
-      <div className="border-t border-slate-200 p-3">
+      {/* Toggle Collapse Button - Ẩn trên mobile */}
+      <div className="hidden md:block border-t border-slate-200 p-3">
         <button
           onClick={onToggle}
           className={cn(

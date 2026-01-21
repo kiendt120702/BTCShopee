@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { SimpleDateRangePicker } from '@/components/ui/date-range-picker';
 import {
   Dialog,
   DialogContent,
@@ -538,68 +539,13 @@ export function AdsPanel({ shopId, userId }: AdsPanelProps) {
         <div className="bg-white border-b">
           {/* Date Filter */}
           <div className="px-4 py-2 border-b flex flex-wrap items-center gap-2 md:gap-3">
-            <span className="text-xs text-gray-500 font-medium hidden md:inline">Khoảng thời gian:</span>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setDateRange('today')}
-                disabled={isFetching}
-                className={cn(
-                  "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                  dateRange === 'today'
-                    ? "bg-blue-500 text-white shadow-md"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                  isFetching && "opacity-50 cursor-not-allowed"
-                )}
-              >
-                Hôm nay
-              </button>
-              <button
-                onClick={() => setDateRange('7days')}
-                disabled={isFetching}
-                className={cn(
-                  "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                  dateRange === '7days'
-                    ? "bg-blue-500 text-white shadow-md"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                  isFetching && "opacity-50 cursor-not-allowed"
-                )}
-              >
-                7 ngày
-              </button>
-              <button
-                onClick={() => setDateRange('30days')}
-                disabled={isFetching}
-                className={cn(
-                  "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
-                  dateRange === '30days'
-                    ? "bg-blue-500 text-white shadow-md"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                  isFetching && "opacity-50 cursor-not-allowed"
-                )}
-              >
-                30 ngày
-              </button>
-            </div>
-            <div className="h-4 w-px bg-gray-300 hidden md:block" />
-            <input
-              type="date"
-              value={selectedDate.toISOString().split('T')[0]}
-              onChange={(e) => setSelectedDate(new Date(e.target.value))}
-              max={new Date().toISOString().split('T')[0]}
+            <SimpleDateRangePicker
+              dateRange={dateRange}
+              selectedDate={selectedDate}
+              onDateRangeChange={setDateRange}
+              onSelectedDateChange={setSelectedDate}
               disabled={isFetching}
-              className={cn(
-                "px-2 py-1 text-xs border rounded",
-                isFetching && "opacity-50 cursor-not-allowed"
-              )}
             />
-            <span className="text-xs text-gray-400 hidden md:inline">
-              {dateRange === 'today'
-                ? `Ngày ${selectedDate.toLocaleDateString('vi-VN')}`
-                : dateRange === '7days'
-                  ? `7 ngày đến ${selectedDate.toLocaleDateString('vi-VN')}`
-                  : `30 ngày đến ${selectedDate.toLocaleDateString('vi-VN')}`
-              }
-            </span>
             {isFetching && (
               <div className="flex items-center gap-1.5 text-blue-600">
                 <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />

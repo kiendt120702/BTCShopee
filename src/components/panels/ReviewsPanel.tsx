@@ -151,57 +151,62 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
     <Card className="border-0 shadow-sm">
       <CardContent className="p-0">
         {/* Stats Header */}
-        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-orange-50 to-yellow-50">
-          <div className="flex items-center gap-6">
-            <div className="text-center">
-              <div className="flex items-center gap-1">
-                <span className="text-3xl font-bold text-orange-600">{stats.avg}</span>
-                <Star className="h-6 w-6 fill-yellow-400 text-yellow-400" />
-              </div>
-              <p className="text-xs text-slate-500">Điểm trung bình</p>
-            </div>
-            <div className="h-10 w-px bg-slate-200" />
-            <div className="text-center">
-              <p className="text-2xl font-semibold text-slate-700">{stats.total}</p>
-              <p className="text-xs text-slate-500">Tổng đánh giá</p>
-            </div>
-            <div className="h-10 w-px bg-slate-200" />
-            <div className="text-center">
-              <p className="text-2xl font-semibold text-green-600">{stats.replied}</p>
-              <p className="text-xs text-slate-500">Đã trả lời</p>
-            </div>
-            {syncStatus?.last_sync_at && (
-              <>
-                <div className="h-10 w-px bg-slate-200" />
-                <div className="text-center">
-                  <p className="text-xs text-slate-500">Đồng bộ lần cuối</p>
-                  <p className="text-sm text-slate-600">
-                    {new Date(syncStatus.last_sync_at).toLocaleString('vi-VN')}
-                  </p>
+        <div className="p-4 border-b bg-gradient-to-r from-orange-50 to-yellow-50">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            {/* Stats */}
+            <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto pb-2 sm:pb-0">
+              <div className="text-center flex-shrink-0">
+                <div className="flex items-center gap-1">
+                  <span className="text-2xl sm:text-3xl font-bold text-orange-600">{stats.avg}</span>
+                  <Star className="h-5 w-5 sm:h-6 sm:w-6 fill-yellow-400 text-yellow-400" />
                 </div>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => refetch()} 
-              disabled={loading}
-            >
-              <Database className={cn('h-4 w-4 mr-1', loading && 'animate-pulse')} />
-              Tải từ DB
-            </Button>
-            <Button 
-              variant="default" 
-              size="sm" 
-              onClick={() => syncReviews()} 
-              disabled={syncing}
-              className="bg-orange-500 hover:bg-orange-600"
-            >
-              <CloudDownload className={cn('h-4 w-4 mr-1', syncing && 'animate-bounce')} />
-              {syncing ? 'Đang đồng bộ...' : 'Đồng bộ Shopee'}
-            </Button>
+                <p className="text-xs text-slate-500">Điểm trung bình</p>
+              </div>
+              <div className="h-10 w-px bg-slate-200 flex-shrink-0" />
+              <div className="text-center flex-shrink-0">
+                <p className="text-xl sm:text-2xl font-semibold text-slate-700">{stats.total}</p>
+                <p className="text-xs text-slate-500">Tổng đánh giá</p>
+              </div>
+              <div className="h-10 w-px bg-slate-200 flex-shrink-0" />
+              <div className="text-center flex-shrink-0">
+                <p className="text-xl sm:text-2xl font-semibold text-green-600">{stats.replied}</p>
+                <p className="text-xs text-slate-500">Đã trả lời</p>
+              </div>
+              {syncStatus?.last_sync_at && (
+                <>
+                  <div className="h-10 w-px bg-slate-200 flex-shrink-0" />
+                  <div className="text-center flex-shrink-0">
+                    <p className="text-xs text-slate-500">Đồng bộ lần cuối</p>
+                    <p className="text-xs sm:text-sm text-slate-600">
+                      {new Date(syncStatus.last_sync_at).toLocaleString('vi-VN')}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+            {/* Buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetch()}
+                disabled={loading}
+                className="flex-1 sm:flex-none"
+              >
+                <Database className={cn('h-4 w-4 sm:mr-1', loading && 'animate-pulse')} />
+                <span className="hidden sm:inline">Tải từ DB</span>
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => syncReviews()}
+                disabled={syncing}
+                className="bg-orange-500 hover:bg-orange-600 flex-1 sm:flex-none"
+              >
+                <CloudDownload className={cn('h-4 w-4 sm:mr-1', syncing && 'animate-bounce')} />
+                <span className="hidden sm:inline">{syncing ? 'Đang đồng bộ...' : 'Đồng bộ'}</span>
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -238,18 +243,18 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
         </div>
 
         {/* Search & Filter */}
-        <div className="flex items-center gap-3 p-3 border-b bg-slate-50">
-          <div className="relative flex-1 max-w-xs">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 p-3 border-b bg-slate-50">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Tìm theo nội dung, người mua, sản phẩm..."
+              placeholder="Tìm theo nội dung"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 h-9"
+              className="pl-9 h-9 w-full"
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px] h-9">
+            <SelectTrigger className="w-full sm:w-[180px] h-9">
               <Filter className="h-4 w-4 mr-2 text-slate-400" />
               <SelectValue />
             </SelectTrigger>
@@ -263,8 +268,8 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
           </Select>
         </div>
 
-        {/* Table Header */}
-        <div className="grid grid-cols-12 bg-slate-100 border-b text-xs font-medium text-slate-600">
+        {/* Table Header - Hidden on mobile */}
+        <div className="hidden md:grid grid-cols-12 bg-slate-100 border-b text-xs font-medium text-slate-600">
           <div className="col-span-4 px-4 py-3">Thông tin sản phẩm</div>
           <div className="col-span-3 px-4 py-3">Đánh giá người mua</div>
           <div className="col-span-3 px-4 py-3">Phản hồi đánh giá</div>
@@ -352,58 +357,58 @@ export function ReviewsPanel({ shopId, userId }: ReviewsPanelProps) {
 }
 
 
-function ReviewTableRow({ review, shopId }: { review: Review; shopId: number }) {
+function ReviewTableRow({ review }: { review: Review; shopId: number }) {
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const hasMedia = (review.images?.length || 0) > 0 || (review.videos?.length || 0) > 0;
 
   return (
-    <div className="grid grid-cols-12 hover:bg-slate-50/50 transition-colors border-b last:border-b-0">
-      {/* Thông tin sản phẩm */}
-      <div className="col-span-4 p-4 border-r border-slate-100">
-        <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
-          <span className="text-slate-700 font-medium">{review.buyer_username}</span>
+    <>
+      {/* Mobile Layout */}
+      <div className="md:hidden p-4 border-b last:border-b-0 space-y-3">
+        {/* Header: User + Rating + Order */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-700">{review.buyer_username}</span>
+            <StarRating rating={review.rating_star} />
+          </div>
+          <span className="text-xs text-slate-400 font-mono">{review.order_sn}</span>
         </div>
+
+        {/* Product Info */}
         <div className="flex gap-3">
           {review.item_image ? (
             <ImageWithZoom
               src={review.item_image}
               alt={review.item_name || 'Product'}
-              className="w-14 h-14 object-cover rounded border flex-shrink-0"
-              zoomSize={240}
+              className="w-12 h-12 object-cover rounded border flex-shrink-0"
+              zoomSize={200}
             />
           ) : (
-            <div className="w-14 h-14 bg-slate-100 rounded border flex items-center justify-center flex-shrink-0">
-              <Package className="w-5 h-5 text-slate-400" />
+            <div className="w-12 h-12 bg-slate-100 rounded border flex items-center justify-center flex-shrink-0">
+              <Package className="w-4 h-4 text-slate-400" />
             </div>
           )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-slate-800 line-clamp-2 leading-tight">
-              {review.item_name || (
-                <span className="text-slate-400 italic">Sản phẩm đã xóa hoặc ẩn</span>
-              )}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Đánh giá người mua */}
-      <div className="col-span-3 p-4 border-r border-slate-100">
-        <StarRating rating={review.rating_star} />
-        {review.comment && (
-          <p className={cn("text-sm text-slate-700 mt-2", !expanded && "line-clamp-3")}>
-            {review.comment}
+          <p className="text-sm text-slate-800 line-clamp-2 flex-1">
+            {review.item_name || <span className="text-slate-400 italic">Sản phẩm đã xóa</span>}
           </p>
+        </div>
+
+        {/* Comment */}
+        {review.comment && (
+          <div>
+            <p className={cn("text-sm text-slate-700", !expanded && "line-clamp-3")}>{review.comment}</p>
+            {review.comment.length > 100 && (
+              <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-500 mt-1">
+                {expanded ? 'Thu gọn' : 'Xem thêm'}
+              </button>
+            )}
+          </div>
         )}
-        {review.comment && review.comment.length > 150 && (
-          <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-500 hover:underline mt-1">
-            {expanded ? 'Thu gọn' : 'Xem thêm'}
-          </button>
-        )}
-        
+
         {/* Media */}
         {hasMedia && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
+          <div className="flex flex-wrap gap-1.5">
             {review.images?.map((img, idx) => (
               <MediaThumbnail key={`img-${idx}`} type="image" url={img} />
             ))}
@@ -412,56 +417,153 @@ function ReviewTableRow({ review, shopId }: { review: Review; shopId: number }) 
             ))}
           </div>
         )}
-        
-        <p className="text-xs text-slate-400 mt-2">Lúc: {formatDateTime(review.create_time)}</p>
+
+        <p className="text-xs text-slate-400">Lúc: {formatDateTime(review.create_time)}</p>
+
+        {/* Reply Section */}
+        <div className="pt-2 border-t border-slate-100">
+          {review.reply_text ? (
+            <div className="bg-green-50 rounded p-2">
+              <p className="text-xs text-green-600 font-medium mb-1">Đã trả lời:</p>
+              <p className="text-sm text-slate-700">{review.reply_text}</p>
+              {review.reply_time && (
+                <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                  Lúc: {formatDateTime(review.reply_time)} <Check className="h-3 w-3 text-green-500" />
+                </p>
+              )}
+            </div>
+          ) : showReplyForm ? (
+            <div>
+              <textarea
+                className="w-full p-2 text-sm border rounded resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+                rows={3}
+                placeholder="Nhập nội dung phản hồi..."
+              />
+              <div className="flex justify-end gap-2 mt-2">
+                <Button variant="ghost" size="sm" onClick={() => setShowReplyForm(false)}>Hủy</Button>
+                <Button size="sm" className="bg-orange-500 hover:bg-orange-600">Gửi</Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-blue-500 border-blue-200"
+              onClick={() => setShowReplyForm(true)}
+            >
+              <MessageSquare className="h-4 w-4 mr-1" />
+              Trả lời đánh giá
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Phản hồi đánh giá */}
-      <div className="col-span-3 p-4 border-r border-slate-100">
-        {review.reply_text ? (
-          <div>
-            <p className="text-xs text-slate-500 mb-1">Đã trả lời:</p>
-            <p className="text-sm text-slate-700">{review.reply_text}</p>
-            {review.reply_time && (
-              <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-                Lúc: {formatDateTime(review.reply_time)} <Check className="h-3 w-3 text-green-500" />
-              </p>
-            )}
+      {/* Desktop Layout */}
+      <div className="hidden md:grid grid-cols-12 hover:bg-slate-50/50 transition-colors border-b last:border-b-0">
+        {/* Thông tin sản phẩm */}
+        <div className="col-span-4 p-4 border-r border-slate-100">
+          <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
+            <span className="text-slate-700 font-medium">{review.buyer_username}</span>
           </div>
-        ) : showReplyForm ? (
-          <div>
-            <textarea
-              className="w-full p-2 text-sm border rounded resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
-              rows={3}
-              placeholder="Nhập nội dung phản hồi..."
-            />
-            <div className="flex justify-end gap-2 mt-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowReplyForm(false)}>Hủy</Button>
-              <Button size="sm" className="bg-orange-500 hover:bg-orange-600">Gửi</Button>
+          <div className="flex gap-3">
+            {review.item_image ? (
+              <ImageWithZoom
+                src={review.item_image}
+                alt={review.item_name || 'Product'}
+                className="w-14 h-14 object-cover rounded border flex-shrink-0"
+                zoomSize={240}
+              />
+            ) : (
+              <div className="w-14 h-14 bg-slate-100 rounded border flex items-center justify-center flex-shrink-0">
+                <Package className="w-5 h-5 text-slate-400" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-slate-800 line-clamp-2 leading-tight">
+                {review.item_name || (
+                  <span className="text-slate-400 italic">Sản phẩm đã xóa hoặc ẩn</span>
+                )}
+              </p>
             </div>
           </div>
-        ) : (
-          <p className="text-sm text-slate-400 italic">Chưa có phản hồi</p>
-        )}
-      </div>
+        </div>
 
-      {/* Thao tác */}
-      <div className="col-span-2 p-4 text-right">
-        <p className="text-xs text-slate-500 mb-2">
-          Mã đơn: <span className="font-mono text-slate-700">{review.order_sn}</span>
-        </p>
-        {!review.reply_text && (
-          <Button
-            variant="link"
-            size="sm"
-            className="text-blue-500 hover:text-blue-600 p-0 h-auto"
-            onClick={() => setShowReplyForm(!showReplyForm)}
-          >
-            Trả lời
-          </Button>
-        )}
+        {/* Đánh giá người mua */}
+        <div className="col-span-3 p-4 border-r border-slate-100">
+          <StarRating rating={review.rating_star} />
+          {review.comment && (
+            <p className={cn("text-sm text-slate-700 mt-2", !expanded && "line-clamp-3")}>
+              {review.comment}
+            </p>
+          )}
+          {review.comment && review.comment.length > 150 && (
+            <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-500 hover:underline mt-1">
+              {expanded ? 'Thu gọn' : 'Xem thêm'}
+            </button>
+          )}
+
+          {/* Media */}
+          {hasMedia && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {review.images?.map((img, idx) => (
+                <MediaThumbnail key={`img-${idx}`} type="image" url={img} />
+              ))}
+              {review.videos?.map((video, idx) => (
+                <MediaThumbnail key={`vid-${idx}`} type="video" url={video.url} />
+              ))}
+            </div>
+          )}
+
+          <p className="text-xs text-slate-400 mt-2">Lúc: {formatDateTime(review.create_time)}</p>
+        </div>
+
+        {/* Phản hồi đánh giá */}
+        <div className="col-span-3 p-4 border-r border-slate-100">
+          {review.reply_text ? (
+            <div>
+              <p className="text-xs text-slate-500 mb-1">Đã trả lời:</p>
+              <p className="text-sm text-slate-700">{review.reply_text}</p>
+              {review.reply_time && (
+                <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+                  Lúc: {formatDateTime(review.reply_time)} <Check className="h-3 w-3 text-green-500" />
+                </p>
+              )}
+            </div>
+          ) : showReplyForm ? (
+            <div>
+              <textarea
+                className="w-full p-2 text-sm border rounded resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+                rows={3}
+                placeholder="Nhập nội dung phản hồi..."
+              />
+              <div className="flex justify-end gap-2 mt-2">
+                <Button variant="ghost" size="sm" onClick={() => setShowReplyForm(false)}>Hủy</Button>
+                <Button size="sm" className="bg-orange-500 hover:bg-orange-600">Gửi</Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400 italic">Chưa có phản hồi</p>
+          )}
+        </div>
+
+        {/* Thao tác */}
+        <div className="col-span-2 p-4 text-right">
+          <p className="text-xs text-slate-500 mb-2">
+            Mã đơn: <span className="font-mono text-slate-700">{review.order_sn}</span>
+          </p>
+          {!review.reply_text && (
+            <Button
+              variant="link"
+              size="sm"
+              className="text-blue-500 hover:text-blue-600 p-0 h-auto"
+              onClick={() => setShowReplyForm(!showReplyForm)}
+            >
+              Trả lời
+            </Button>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

@@ -32,6 +32,7 @@ import OrdersPage from '@/pages/OrdersPage';
 import ReviewsPage from '@/pages/ReviewsPage';
 import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
 import AdsPage from '@/pages/AdsPage';
+import AutoAdsPage from '@/pages/AutoAdsPage';
 import AdsSchedulesPage from '@/pages/AdsSchedulesPage';
 import AdsHistoryPage from '@/pages/AdsHistoryPage';
 
@@ -82,6 +83,7 @@ function App() {
 
                   <Route path="/flash-sale/auto-setup" element={<FlashSaleAutoSetupPage />} />
                   <Route path="/ads" element={<AdsPage />} />
+                  <Route path="/ads/auto" element={<AutoAdsPage />} />
                   <Route path="/ads/schedules" element={<AdsSchedulesPage />} />
                   <Route path="/ads/history" element={<AdsHistoryPage />} />
 
