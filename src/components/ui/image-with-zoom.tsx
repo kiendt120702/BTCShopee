@@ -1,9 +1,11 @@
 /**
  * ImageWithZoom - Component hiển thị ảnh với zoom khi hover
  * Dùng chung cho tất cả các trang có hiển thị ảnh sản phẩm
+ * Sử dụng Portal để render zoom image ra ngoài container tránh bị cắt bởi overflow
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
 interface ImageWithZoomProps {
@@ -11,7 +13,6 @@ interface ImageWithZoomProps {
   alt: string;
   className?: string;
   zoomSize?: number;
-  zoomPosition?: 'left' | 'right' | 'top' | 'bottom';
 }
 
 export function ImageWithZoom({
@@ -19,49 +20,75 @@ export function ImageWithZoom({
   alt,
   className,
   zoomSize = 280,
-  zoomPosition = 'right',
 }: ImageWithZoomProps) {
   const [showZoom, setShowZoom] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const imgRef = useRef<HTMLImageElement>(null);
 
-  const getZoomPositionStyles = () => {
-    switch (zoomPosition) {
-      case 'left':
-        return 'right-full mr-2 top-0';
-      case 'top':
-        return 'bottom-full mb-2 left-0';
-      case 'bottom':
-        return 'top-full mt-2 left-0';
-      case 'right':
-      default:
-        return 'left-full ml-2 top-0';
+  useEffect(() => {
+    if (showZoom && imgRef.current) {
+      const rect = imgRef.current.getBoundingClientRect();
+
+      // Position zoom to the right of the image
+      let top = rect.top;
+      let left = rect.right + 8; // 8px gap to the right
+
+      // Check if zoom would go off the right edge of viewport
+      if (left + zoomSize > window.innerWidth) {
+        // Position to the left of the image instead
+        left = rect.left - zoomSize - 8;
+      }
+
+      // Check if zoom would go off the left edge
+      if (left < 0) {
+        left = 8;
+      }
+
+      // Check if zoom would go off the bottom
+      if (top + zoomSize > window.innerHeight) {
+        top = window.innerHeight - zoomSize - 8;
+      }
+
+      // Check if zoom would go off the top
+      if (top < 0) {
+        top = 8;
+      }
+
+      setPosition({ top, left });
     }
-  };
+  }, [showZoom, zoomSize]);
 
   return (
-    <div className="relative">
+    <>
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         className={cn('cursor-pointer', className)}
         onMouseEnter={() => setShowZoom(true)}
         onMouseLeave={() => setShowZoom(false)}
       />
-      {showZoom && (
-        <div
-          className={cn(
-            'absolute z-50 bg-white rounded-lg shadow-xl border p-1',
-            getZoomPositionStyles()
-          )}
-          style={{ width: zoomSize, height: zoomSize }}
-        >
-          <img
-            src={src}
-            alt={alt}
-            className="w-full h-full object-contain rounded"
-          />
-        </div>
-      )}
-    </div>
+      {showZoom &&
+        createPortal(
+          <div
+            className="fixed bg-white rounded-lg shadow-2xl border-2 border-slate-200 p-1 pointer-events-none"
+            style={{
+              top: position.top,
+              left: position.left,
+              width: zoomSize,
+              height: zoomSize,
+              zIndex: 99999,
+            }}
+          >
+            <img
+              src={src}
+              alt={alt}
+              className="w-full h-full object-contain rounded"
+            />
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 

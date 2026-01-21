@@ -65,15 +65,23 @@ const childRouteNames: Record<string, Record<string, string>> = {
   },
 };
 
-// Check if segment is a dynamic ID (numeric)
+// Check if segment is a dynamic ID (numeric or order SN like "260121KA117CKD")
 function isDynamicSegment(segment: string): boolean {
-  return /^\d+$/.test(segment);
+  // Pure numeric IDs
+  if (/^\d+$/.test(segment)) return true;
+  // Order SN format: starts with digits, contains letters (e.g., 260121KA117CKD)
+  if (/^\d{6}[A-Z0-9]+$/i.test(segment)) return true;
+  return false;
 }
 
 // Get display name for segment
 function getSegmentName(segment: string, prevSegment?: string, isLast?: boolean, allSegments?: string[]): string {
   // If it's a dynamic ID, show contextual name
   if (isDynamicSegment(segment)) {
+    // Order detail page: /orders/:orderSn
+    if (prevSegment === 'orders') {
+      return `Chi tiết đơn hàng #${segment}`;
+    }
     if (prevSegment === 'detail') {
       return `#${segment}`;
     }

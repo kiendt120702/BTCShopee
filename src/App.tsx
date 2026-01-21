@@ -24,6 +24,7 @@ import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
 // Feature Pages
 import FlashSalePage from '@/pages/FlashSalePage';
 import FlashSaleDetailPage from '@/pages/FlashSaleDetailPage';
+import OrderDetailPage from '@/pages/OrderDetailPage';
 
 
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
@@ -74,6 +75,7 @@ function App() {
                   <Route path="/" element={<HomePage />} />
                   {/* Feature Routes */}
                   <Route path="/orders" element={<OrdersPage />} />
+                  <Route path="/orders/:orderSn" element={<OrderDetailPage />} />
                   <Route path="/products" element={<ProductsPage />} />
                   <Route path="/reviews" element={<ReviewsPage />} />
                   <Route path="/reviews/auto-reply" element={<ReviewsAutoReplyPage />} />

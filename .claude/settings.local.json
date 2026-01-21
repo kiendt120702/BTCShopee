@@ -36,7 +36,11 @@
       "Bash(tee:*)",
       "Bash(powershell -Command \"Get-Content ''supabase\\\\migrations\\\\061_implement_chunked_ads_sync.sql'' | npx supabase db execute --linked\")",
       "Bash(pkill:*)",
-      "mcp__supabase__search_docs"
+      "mcp__supabase__search_docs",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)"
     ]
   }
 }
