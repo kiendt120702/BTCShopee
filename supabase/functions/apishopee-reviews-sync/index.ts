@@ -291,7 +291,7 @@ async function fetchCommentPageByType(
   commentType: number,
   cursor: string = ''
 ): Promise<{ comments: ShopeeComment[]; nextCursor: string; more: boolean }> {
-  const params: Record<string, string | number> = { 
+  const params: Record<string, string | number> = {
     page_size: PAGE_SIZE,
     comment_type: commentType
   };
@@ -299,16 +299,28 @@ async function fetchCommentPageByType(
 
   const result = await callShopeeAPI(supabase, credentials, COMMENT_API_PATH, shopId, token, params) as CommentApiResponse;
 
+  // Kiểm tra kết quả trả về
+  if (!result) {
+    console.error('[REVIEWS-SYNC] API returned null/undefined');
+    throw new Error('API returned invalid response');
+  }
+
   if (result.error) {
     console.error('[REVIEWS-SYNC] API Error:', result.message || result.error);
     throw new Error(result.message || result.error);
   }
 
+  // Kiểm tra cấu trúc response
+  if (!result.response) {
+    console.warn('[REVIEWS-SYNC] API returned no response object');
+    return { comments: [], nextCursor: '', more: false };
+  }
+
   const comments = result.response?.item_comment_list || [];
-  
+
   // Log để debug
   if (comments.length > 0) {
-    console.log(`[REVIEWS-SYNC] comment_type=${commentType}, sample:`, JSON.stringify(comments[0], null, 2));
+    console.log(`[REVIEWS-SYNC] comment_type=${commentType}, fetched ${comments.length} comments`);
   }
 
   return {
@@ -342,33 +354,46 @@ async function fetchAllRepliedComments(
   token: { access_token: string; refresh_token: string }
 ): Promise<Map<number, ShopeeComment>> {
   console.log('[REVIEWS-SYNC] Fetching replied comments...');
-  
+
   const repliedMap = new Map<number, ShopeeComment>();
   let cursor = '';
   let more = true;
-  
-  while (more) {
-    // comment_type: 2 = With reply
-    const { comments, nextCursor, more: hasMore } = await fetchCommentPageByType(
-      supabase, credentials, shopId, token, 2, cursor
-    );
-    
-    console.log(`[REVIEWS-SYNC] Fetched ${comments.length} replied comments`);
-    
-    for (const comment of comments) {
-      repliedMap.set(comment.comment_id, comment);
+  let pageCount = 0;
+  const MAX_PAGES = 100; // Safety limit để tránh infinite loop
+
+  try {
+    while (more && pageCount < MAX_PAGES) {
+      // comment_type: 2 = With reply
+      const { comments, nextCursor, more: hasMore } = await fetchCommentPageByType(
+        supabase, credentials, shopId, token, 2, cursor
+      );
+
+      console.log(`[REVIEWS-SYNC] Fetched ${comments.length} replied comments (page ${pageCount + 1})`);
+
+      for (const comment of comments) {
+        repliedMap.set(comment.comment_id, comment);
+      }
+
+      cursor = nextCursor;
+      more = hasMore;
+      pageCount++;
+
+      if (more) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
     }
-    
-    cursor = nextCursor;
-    more = hasMore;
-    
-    if (more) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+
+    if (pageCount >= MAX_PAGES) {
+      console.warn('[REVIEWS-SYNC] Reached max pages limit for replied comments');
     }
+
+    console.log(`[REVIEWS-SYNC] Total replied comments: ${repliedMap.size}`);
+    return repliedMap;
+  } catch (error) {
+    console.error('[REVIEWS-SYNC] Error fetching replied comments:', error);
+    // Return partial data instead of failing completely
+    return repliedMap;
   }
-  
-  console.log(`[REVIEWS-SYNC] Total replied comments: ${repliedMap.size}`);
-  return repliedMap;
 }
 
 /**
@@ -508,12 +533,15 @@ async function initialLoadReviews(
     const repliedMap = await fetchAllRepliedComments(supabase, credentials, shopId, token);
 
     // Step 2: Fetch tất cả comments và merge với replied data
-    while (more) {
+    let pageCount = 0;
+    const MAX_PAGES = 200; // Safety limit
+
+    while (more && pageCount < MAX_PAGES) {
       const { comments, nextCursor, more: hasMore } = await fetchCommentPage(
         supabase, credentials, shopId, token, cursor
       );
 
-      console.log(`[REVIEWS-SYNC] Fetched ${comments.length} comments, more: ${hasMore}`);
+      console.log(`[REVIEWS-SYNC] Fetched ${comments.length} comments, more: ${hasMore} (page ${pageCount + 1})`);
 
       if (comments.length > 0) {
         // Merge reply data từ repliedMap
@@ -551,11 +579,16 @@ async function initialLoadReviews(
 
       cursor = nextCursor;
       more = hasMore;
+      pageCount++;
 
       // Rate limiting - đợi 500ms giữa các request
       if (more) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
+    }
+
+    if (pageCount >= MAX_PAGES) {
+      console.warn('[REVIEWS-SYNC] Reached max pages limit');
     }
 
     // Hoàn thành initial load

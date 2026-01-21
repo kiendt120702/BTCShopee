@@ -318,29 +318,45 @@ export function useReviewsData(shopId: number, userId: string): UseReviewsDataRe
   // Fetch stats for all reviews (total, replied, rating counts, avg)
   const fetchStats = useCallback(async (): Promise<ReviewStats> => {
     if (!shopId) return DEFAULT_STATS;
-    
-    // Fetch rating_star and reply_text for all reviews (lightweight query)
+
+    // First, get exact count using count query
+    const { count: totalCount, error: countError } = await supabase
+      .from('apishopee_reviews')
+      .select('*', { count: 'exact', head: true })
+      .eq('shop_id', shopId);
+
+    if (countError) {
+      console.error('[useReviewsData] Error fetching count:', countError);
+      return DEFAULT_STATS;
+    }
+
+    console.log('[useReviewsData] Total reviews count:', totalCount, 'for shop_id:', shopId);
+
+    // Then fetch rating_star and reply_text for all reviews (up to 10k)
+    // Use .range(0, 9999) to override Supabase's default 1000 row limit
     const { data, error } = await supabase
       .from('apishopee_reviews')
       .select('rating_star, reply_text')
-      .eq('shop_id', shopId);
-    
+      .eq('shop_id', shopId)
+      .range(0, 9999);
+
     if (error || !data || data.length === 0) {
       console.error('[useReviewsData] Error fetching stats:', error);
       return DEFAULT_STATS;
     }
 
-    const totalCount = data.length;
+    console.log('[useReviewsData] Fetched reviews data:', data.length, 'rows');
+
     const repliedCount = data.filter(r => r.reply_text).length;
     const sumRating = data.reduce((acc, r) => acc + r.rating_star, 0);
-    const avgRating = totalCount > 0 ? sumRating / totalCount : 0;
-    
+    const avgRating = totalCount && totalCount > 0 ? sumRating / totalCount : 0;
+
     const ratingCounts: Record<number, number> = {};
     data.forEach(r => {
       ratingCounts[r.rating_star] = (ratingCounts[r.rating_star] || 0) + 1;
     });
 
-    return { totalCount, repliedCount, avgRating, ratingCounts };
+    return { totalCount: totalCount || 0, repliedCount, avgRating, ratingCounts };
   }, [shopId]);
 
   // Fetch products for enrichment (cached separately)

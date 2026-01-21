@@ -149,7 +149,12 @@ export interface UseAdsDataReturn {
 // ==================== HELPER FUNCTIONS ====================
 
 function formatDateForDB(date: Date): string {
-  return date.toISOString().split('T')[0];
+  // IMPORTANT: Use local timezone, not UTC!
+  // toISOString() converts to UTC which can shift the date by 1 day
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function getDateRange(dateRange: 'today' | '7days' | '30days', selectedDate: Date): { startDate: string; endDate: string } {
@@ -400,9 +405,9 @@ export function useAdsData(
     queryKey: campaignsQueryKey,
     queryFn: fetchCampaigns,
     enabled: !!shopId && !!userId,
-    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
-    gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
-    refetchOnWindowFocus: false,
+    staleTime: 0, // Always consider data stale - refetch immediately
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes only
+    refetchOnWindowFocus: true, // Refetch when tab becomes active
     refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
@@ -431,9 +436,9 @@ export function useAdsData(
     queryKey: performanceQueryKey,
     queryFn: fetchDailyPerformance,
     enabled: !!shopId && !!userId,
-    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
-    gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: 0, // Always consider data stale - refetch immediately
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true, // Refetch when tab becomes active
     refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
@@ -462,9 +467,9 @@ export function useAdsData(
     queryKey: shopLevelQueryKey,
     queryFn: fetchShopLevelPerformance,
     enabled: !!shopId && !!userId,
-    staleTime: 2 * 60 * 1000, // 2 minutes - allow refetch after this time
-    gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: 0, // Always consider data stale - refetch immediately to avoid showing cached data
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true, // Refetch when tab becomes active to ensure fresh data
     refetchOnMount: true, // Always refetch on mount to ensure fresh data
   });
 
@@ -761,6 +766,49 @@ export function useAdsData(
           queryClient.invalidateQueries({ queryKey: performanceQueryKey });
         }
       )
+      // Subscribe to hourly performance changes
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'apishopee_ads_performance_hourly',
+          filter: `shop_id=eq.${shopId}`,
+        },
+        (payload) => {
+          console.log('[useAdsData] Hourly performance changed:', payload.eventType);
+          // Invalidate hourly data để refetch khi có thay đổi
+          setHourlyData({});
+        }
+      )
+      // Subscribe to shop-level daily performance changes (QUAN TRỌNG cho Overview)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'apishopee_ads_shop_performance_daily',
+          filter: `shop_id=eq.${shopId}`,
+        },
+        (payload) => {
+          console.log('[useAdsData] Shop-level daily performance changed:', payload.eventType);
+          queryClient.invalidateQueries({ queryKey: shopLevelQueryKey });
+        }
+      )
+      // Subscribe to shop-level hourly performance changes
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'apishopee_ads_shop_performance_hourly',
+          filter: `shop_id=eq.${shopId}`,
+        },
+        (payload) => {
+          console.log('[useAdsData] Shop-level hourly performance changed:', payload.eventType);
+          queryClient.invalidateQueries({ queryKey: shopLevelQueryKey });
+        }
+      )
       // Subscribe to sync status changes
       .on(
         'postgres_changes',
@@ -789,7 +837,7 @@ export function useAdsData(
       console.log('[useAdsData] Unsubscribing from realtime');
       supabase.removeChannel(channel);
     };
-  }, [shopId, userId, queryClient, campaignsQueryKey, performanceQueryKey]);
+  }, [shopId, userId, queryClient, campaignsQueryKey, performanceQueryKey, shopLevelQueryKey]);
 
   // ==================== RETURN ====================
 

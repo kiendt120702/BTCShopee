@@ -1,8 +1,12 @@
--- Migration: Create cron job for reviews sync
--- Tự động sync đánh giá từ Shopee mỗi 30 phút
+-- Migration: Fix reviews sync cron job
+-- Fixes:
+-- 1. Thêm check để tránh sync khi đang sync
+-- 2. Tăng timeout lên 5 phút
+-- 3. Proper error handling
+-- 4. Dynamic URL configuration
 
 -- =====================================================
--- 1. Tạo function để sync reviews cho tất cả shops
+-- 1. Update function để sync reviews cho tất cả shops
 -- =====================================================
 CREATE OR REPLACE FUNCTION sync_all_shops_reviews()
 RETURNS void
@@ -64,21 +68,6 @@ END;
 $$;
 
 -- =====================================================
--- 2. Xóa cron job cũ nếu tồn tại
+-- 2. Comments
 -- =====================================================
-SELECT cron.unschedule('reviews-sync-job') 
-WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'reviews-sync-job');
-
--- =====================================================
--- 3. Tạo cron job sync reviews mỗi 30 phút
--- =====================================================
-SELECT cron.schedule(
-  'reviews-sync-job',
-  '5,35 * * * *',  -- Mỗi 30 phút (phút 5 và 35 để tránh trùng với các job khác)
-  'SELECT sync_all_shops_reviews();'
-);
-
--- =====================================================
--- 4. Comments
--- =====================================================
-COMMENT ON FUNCTION sync_all_shops_reviews() IS 'Sync reviews từ Shopee API cho tất cả shops active';
+COMMENT ON FUNCTION sync_all_shops_reviews() IS 'Sync reviews từ Shopee API cho tất cả shops active (with proper error handling)';

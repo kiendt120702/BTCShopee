@@ -216,6 +216,8 @@ async function syncCampaigns(
     const batch = campaignList.slice(i, i + batchSize);
     const campaignIds = batch.map((c: { campaign_id: number }) => c.campaign_id).join(',');
 
+    console.log(`[ADS-SYNC] Fetching batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(campaignList.length / batchSize)} - Campaigns: ${batch.length}`);
+
     const detailResult = await callShopeeAPI(
       credentials,
       shopId,
@@ -224,10 +226,14 @@ async function syncCampaigns(
       { campaign_id_list: campaignIds, info_type_list: '1,3' }
     );
 
+    console.log(`[ADS-SYNC] Batch ${Math.floor(i / batchSize) + 1} response:`, JSON.stringify(detailResult).substring(0, 500));
+
     if (detailResult.response?.campaign_list) {
+      console.log(`[ADS-SYNC] Batch ${Math.floor(i / batchSize) + 1} - Processing ${detailResult.response.campaign_list.length} campaigns`);
+
       for (const detail of detailResult.response.campaign_list) {
         const original = batch.find((c: { campaign_id: number }) => c.campaign_id === detail.campaign_id);
-        allCampaigns.push({
+        const campaignInfo: CampaignInfo = {
           campaign_id: detail.campaign_id,
           ad_type: original?.ad_type || detail.common_info?.ad_type || 'auto',
           name: detail.common_info?.ad_name,
@@ -239,10 +245,19 @@ async function syncCampaigns(
           start_time: detail.common_info?.campaign_duration?.start_time,
           end_time: detail.common_info?.campaign_duration?.end_time,
           item_count: detail.common_info?.item_id_list?.length || 0,
-        });
+        };
+
+        allCampaigns.push(campaignInfo);
+
+        // In ra thông tin chi tiết từng campaign
+        console.log(`[ADS-SYNC] Campaign detail - ID: ${campaignInfo.campaign_id}, Name: ${campaignInfo.name}, Status: ${campaignInfo.status}, Type: ${campaignInfo.ad_type}, Budget: ${campaignInfo.campaign_budget}, ROAS Target: ${campaignInfo.roas_target}, Items: ${campaignInfo.item_count}`);
       }
+    } else {
+      console.warn(`[ADS-SYNC] Batch ${Math.floor(i / batchSize) + 1} - No campaigns returned`);
     }
   }
+
+  console.log(`[ADS-SYNC] Total campaigns collected: ${allCampaigns.length}`);
 
   // Step 3: UPSERT vào database (tránh trùng lặp)
   const now = new Date().toISOString();
@@ -304,8 +319,9 @@ async function syncDailyPerformanceForDate(
 
   console.log(`[ADS-SYNC] Syncing daily performance for date: ${dateStr} (${campaigns.length} campaigns)`);
 
-  // Chia campaigns thành batches nhỏ (50 campaigns/batch)
-  const BATCH_SIZE = 50;
+  // BATCH SIZE ĐỘNG: Shops nhiều campaigns → Batch nhỏ hơn để tránh timeout
+  const BATCH_SIZE = campaigns.length > 500 ? 30 : campaigns.length > 200 ? 40 : 50;
+  console.log(`[ADS-SYNC] Dynamic batch size for daily perf: ${BATCH_SIZE} (total campaigns: ${campaigns.length})`);
   const now = new Date().toISOString();
   const allUpsertData: Array<{
     shop_id: number;
@@ -344,9 +360,11 @@ async function syncDailyPerformanceForDate(
     }
 
     const campaignPerfList = perfResult.response?.campaign_list || [];
+    console.log(`[ADS-SYNC] Daily perf batch ${Math.floor(i / BATCH_SIZE) + 1} - Found ${campaignPerfList.length} campaigns with data`);
 
     for (const campPerf of campaignPerfList) {
       const metricsList = campPerf.metrics_list || campPerf.performance_list || [];
+      console.log(`[ADS-SYNC] Campaign ${campPerf.campaign_id} - ${metricsList.length} day(s) of metrics`);
 
       for (const dayMetrics of metricsList) {
         const expense = dayMetrics.expense || 0;
@@ -354,7 +372,7 @@ async function syncDailyPerformanceForDate(
         const roas = expense > 0 ? broadGmv / expense : 0;
         const acos = broadGmv > 0 ? (expense / broadGmv) * 100 : 0;
 
-        allUpsertData.push({
+        const perfData = {
           shop_id: shopId,
           campaign_id: campPerf.campaign_id,
           performance_date: dbDate,
@@ -371,7 +389,15 @@ async function syncDailyPerformanceForDate(
           roas,
           acos,
           synced_at: now,
-        });
+        };
+
+        allUpsertData.push(perfData);
+
+        // In ra metrics chi tiết
+        console.log(`[ADS-SYNC] Daily metrics for campaign ${campPerf.campaign_id} on ${dbDate}:`);
+        console.log(`  - Impressions: ${perfData.impression}, Clicks: ${perfData.clicks}, CTR: ${perfData.ctr.toFixed(2)}%`);
+        console.log(`  - Expense: ${perfData.expense}, Broad GMV: ${perfData.broad_gmv}, ROAS: ${perfData.roas.toFixed(2)}`);
+        console.log(`  - Broad Orders: ${perfData.broad_order}, Broad Items Sold: ${perfData.broad_item_sold}`);
       }
     }
 
@@ -439,8 +465,12 @@ async function syncHourlyPerformanceForDate(
 
   console.log(`[ADS-SYNC] Syncing hourly performance for date: ${dateStr}`);
 
-  // QUAN TRỌNG: Chia campaigns thành batches nhỏ để tránh URL quá dài
-  const BATCH_SIZE = 50;
+  // BATCH SIZE ĐỘNG: Shops nhiều campaigns → Batch nhỏ hơn để tránh timeout
+  // < 200 campaigns: batch 50
+  // 200-500 campaigns: batch 40
+  // > 500 campaigns: batch 30
+  const BATCH_SIZE = campaigns.length > 500 ? 30 : campaigns.length > 200 ? 40 : 50;
+  console.log(`[ADS-SYNC] Dynamic batch size: ${BATCH_SIZE} (total campaigns: ${campaigns.length})`);
   const now = new Date().toISOString();
   const allUpsertData: Array<{
     shop_id: number;
@@ -482,9 +512,11 @@ async function syncHourlyPerformanceForDate(
     }
 
     const campaignPerfList = perfResult.response?.campaign_list || [];
+    console.log(`[ADS-SYNC] Hourly perf batch ${Math.floor(i / BATCH_SIZE) + 1} - Found ${campaignPerfList.length} campaigns with data`);
 
     for (const campPerf of campaignPerfList) {
       const metricsList = campPerf.metrics_list || [];
+      console.log(`[ADS-SYNC] Campaign ${campPerf.campaign_id} - ${metricsList.length} hour(s) of metrics`);
 
       for (const hourMetrics of metricsList) {
         const expense = hourMetrics.expense || 0;
@@ -492,7 +524,7 @@ async function syncHourlyPerformanceForDate(
         const roas = expense > 0 ? broadGmv / expense : 0;
         const acos = broadGmv > 0 ? (expense / broadGmv) * 100 : 0;
 
-        allUpsertData.push({
+        const hourlyData = {
           shop_id: shopId,
           campaign_id: campPerf.campaign_id,
           performance_date: dbDate,
@@ -510,7 +542,17 @@ async function syncHourlyPerformanceForDate(
           roas,
           acos,
           synced_at: now,
-        });
+        };
+
+        allUpsertData.push(hourlyData);
+
+        // In ra metrics chi tiết (chỉ in các giờ có dữ liệu)
+        if (hourlyData.impression > 0 || hourlyData.clicks > 0 || hourlyData.expense > 0) {
+          console.log(`[ADS-SYNC] Hourly metrics for campaign ${campPerf.campaign_id} on ${dbDate} at ${hourlyData.hour}:00:`);
+          console.log(`  - Impressions: ${hourlyData.impression}, Clicks: ${hourlyData.clicks}, CTR: ${hourlyData.ctr.toFixed(2)}%`);
+          console.log(`  - Expense: ${hourlyData.expense}, Broad GMV: ${hourlyData.broad_gmv}, ROAS: ${hourlyData.roas.toFixed(2)}`);
+          console.log(`  - Orders: ${hourlyData.broad_order}, Items Sold: ${hourlyData.broad_item_sold}`);
+        }
       }
     }
 
@@ -668,7 +710,8 @@ async function syncShopLevelDailyPerformance(
     { start_date: startDate, end_date: endDate }
   );
 
-  console.log('[ADS-SYNC] Shop-level daily response:', JSON.stringify(perfResult).substring(0, 1000));
+  console.log('[ADS-SYNC] Shop-level daily response:', JSON.stringify(perfResult, null, 2).substring(0, 2000));
+  console.log('[ADS-SYNC] Full shop-level daily API response:', JSON.stringify(perfResult));
 
   let hasShopLevelData = false;
 
@@ -704,15 +747,39 @@ async function syncShopLevelDailyPerformance(
         const roas = dayMetrics.broad_roas || (expense > 0 ? broadGmv / expense : 0);
         const acos = broadGmv > 0 ? (expense / broadGmv) * 100 : 0;
 
-        // QUAN TRỌNG: Sử dụng item_sold từ campaign-level vì API shop-level không trả về field này
-        // Nếu API trả về giá trị > 0 thì ưu tiên dùng, nếu không thì fallback về campaign-level
+        // QUAN TRỌNG: Không overwrite item_sold với 0 nếu đã có dữ liệu cũ
+        // 1. Lấy dữ liệu hiện tại từ DB để so sánh
+        const { data: existingData } = await supabase
+          .from('apishopee_ads_shop_performance_daily')
+          .select('direct_item_sold, broad_item_sold')
+          .eq('shop_id', shopId)
+          .eq('performance_date', perfDate)
+          .maybeSingle();
+
         const apiDirectItemSold = dayMetrics.direct_item_sold || 0;
         const apiBroadItemSold = dayMetrics.broad_item_sold || 0;
         const calcItemSold = itemSoldByDate[perfDate] || { direct_item_sold: 0, broad_item_sold: 0 };
+        const existingItemSold = existingData || { direct_item_sold: 0, broad_item_sold: 0 };
 
-        // Ưu tiên API nếu có giá trị, nếu không fallback về tính từ campaign
-        const directItemSold = apiDirectItemSold > 0 ? apiDirectItemSold : calcItemSold.direct_item_sold;
-        const broadItemSold = apiBroadItemSold > 0 ? apiBroadItemSold : calcItemSold.broad_item_sold;
+        // Logic ưu tiên: API > Campaign-level > Existing DB > 0
+        // KHÔNG bao giờ overwrite giá trị > 0 bằng 0
+        let directItemSold = apiDirectItemSold;
+        if (directItemSold === 0 && calcItemSold.direct_item_sold > 0) {
+          directItemSold = calcItemSold.direct_item_sold;
+        }
+        if (directItemSold === 0 && existingItemSold.direct_item_sold > 0) {
+          directItemSold = existingItemSold.direct_item_sold;
+        }
+
+        let broadItemSold = apiBroadItemSold;
+        if (broadItemSold === 0 && calcItemSold.broad_item_sold > 0) {
+          broadItemSold = calcItemSold.broad_item_sold;
+        }
+        if (broadItemSold === 0 && existingItemSold.broad_item_sold > 0) {
+          broadItemSold = existingItemSold.broad_item_sold;
+        }
+
+        console.log(`[ADS-SYNC] item_sold for ${perfDate}: API=${apiDirectItemSold}/${apiBroadItemSold}, Calc=${calcItemSold.direct_item_sold}/${calcItemSold.broad_item_sold}, Existing=${existingItemSold.direct_item_sold}/${existingItemSold.broad_item_sold}, Final=${directItemSold}/${broadItemSold}`);
 
         const { error: upsertError } = await supabase
           .from('apishopee_ads_shop_performance_daily')
@@ -906,7 +973,8 @@ async function syncShopLevelHourlyPerformance(
     { performance_date: dateStr }
   );
 
-  console.log('[ADS-SYNC] Shop-level hourly response:', JSON.stringify(perfResult).substring(0, 1000));
+  console.log('[ADS-SYNC] Shop-level hourly response:', JSON.stringify(perfResult, null, 2).substring(0, 2000));
+  console.log('[ADS-SYNC] Full shop-level hourly API response:', JSON.stringify(perfResult));
 
   let savedCount = 0;
   let hasShopLevelData = false;
@@ -921,6 +989,24 @@ async function syncShopLevelHourlyPerformance(
     if (metricsList.length > 0) {
       hasShopLevelData = true;
 
+      // Fetch existing data to prevent overwriting item_sold with 0
+      const { data: existingHourlyData } = await supabase
+        .from('apishopee_ads_shop_performance_hourly')
+        .select('hour, direct_item_sold, broad_item_sold')
+        .eq('shop_id', shopId)
+        .eq('performance_date', dbDate);
+
+      // Create map for existing item_sold by hour
+      const existingByHour: Record<number, { direct_item_sold: number; broad_item_sold: number }> = {};
+      if (existingHourlyData) {
+        for (const row of existingHourlyData) {
+          existingByHour[row.hour] = {
+            direct_item_sold: Number(row.direct_item_sold) || 0,
+            broad_item_sold: Number(row.broad_item_sold) || 0,
+          };
+        }
+      }
+
       // Prepare upsert data
       const now = new Date().toISOString();
       const upsertData = metricsList.map((hourMetrics: any) => {
@@ -933,14 +1019,28 @@ async function syncShopLevelHourlyPerformance(
         const roas = expense > 0 ? broadGmv / expense : 0;
         const acos = broadGmv > 0 ? (expense / broadGmv) * 100 : 0;
 
-        // QUAN TRỌNG: Sử dụng item_sold từ campaign-level vì API shop-level không trả về field này
+        // QUAN TRỌNG: Không overwrite item_sold với 0 nếu đã có dữ liệu cũ
         const apiDirectItemSold = hourMetrics.direct_item_sold || 0;
         const apiBroadItemSold = hourMetrics.broad_item_sold || 0;
         const calcItemSold = itemSoldByHour[hourMetrics.hour] || { direct_item_sold: 0, broad_item_sold: 0 };
+        const existingItemSold = existingByHour[hourMetrics.hour] || { direct_item_sold: 0, broad_item_sold: 0 };
 
-        // Ưu tiên API nếu có giá trị, nếu không fallback về tính từ campaign
-        const directItemSold = apiDirectItemSold > 0 ? apiDirectItemSold : calcItemSold.direct_item_sold;
-        const broadItemSold = apiBroadItemSold > 0 ? apiBroadItemSold : calcItemSold.broad_item_sold;
+        // Logic ưu tiên: API > Campaign-level > Existing DB > 0
+        let directItemSold = apiDirectItemSold;
+        if (directItemSold === 0 && calcItemSold.direct_item_sold > 0) {
+          directItemSold = calcItemSold.direct_item_sold;
+        }
+        if (directItemSold === 0 && existingItemSold.direct_item_sold > 0) {
+          directItemSold = existingItemSold.direct_item_sold;
+        }
+
+        let broadItemSold = apiBroadItemSold;
+        if (broadItemSold === 0 && calcItemSold.broad_item_sold > 0) {
+          broadItemSold = calcItemSold.broad_item_sold;
+        }
+        if (broadItemSold === 0 && existingItemSold.broad_item_sold > 0) {
+          broadItemSold = existingItemSold.broad_item_sold;
+        }
 
         return {
           shop_id: shopId,
@@ -971,7 +1071,7 @@ async function syncShopLevelHourlyPerformance(
         console.error('[ADS-SYNC] Upsert shop-level hourly error:', upsertError);
       } else {
         savedCount = upsertData.length;
-        console.log(`[ADS-SYNC] Saved ${savedCount} shop-level hourly records from API (with item_sold from campaign-level)`);
+        console.log(`[ADS-SYNC] Saved ${savedCount} shop-level hourly records from API (preserving existing item_sold)`);
       }
     }
   }
@@ -1074,6 +1174,169 @@ async function syncShopLevelHourlyPerformance(
 }
 
 /**
+ * Aggregate shop-level performance from campaign data
+ * This ensures shop-level data matches the sum of all campaigns
+ * Used after chunked performance sync completes
+ */
+async function aggregateShopLevelFromCampaigns(
+  supabase: ReturnType<typeof createClient>,
+  shopId: number
+): Promise<void> {
+  console.log(`[ADS-SYNC] Aggregating shop-level data from campaigns for shop ${shopId}`);
+
+  const today = getVietnamDate();
+  const sevenDaysAgo = new Date(today.getTime());
+  sevenDaysAgo.setUTCDate(today.getUTCDate() - 6);
+  const dbStartDate = formatDateForDB(sevenDaysAgo);
+  const dbEndDate = formatDateForDB(today);
+
+  // Aggregate DAILY performance
+  const { data: dailyData, error: dailyError } = await supabase
+    .from('apishopee_ads_performance_daily')
+    .select('performance_date, impression, clicks, expense, direct_order, direct_gmv, broad_order, broad_gmv, direct_item_sold, broad_item_sold')
+    .eq('shop_id', shopId)
+    .gte('performance_date', dbStartDate)
+    .lte('performance_date', dbEndDate);
+
+  if (dailyError) {
+    console.error('[ADS-SYNC] Error fetching campaign daily data:', dailyError);
+    return;
+  }
+
+  // Group by date
+  const dailyTotals: Record<string, {
+    impression: number; clicks: number; expense: number;
+    direct_order: number; direct_gmv: number;
+    broad_order: number; broad_gmv: number;
+    direct_item_sold: number; broad_item_sold: number;
+  }> = {};
+
+  for (const row of dailyData || []) {
+    const date = row.performance_date;
+    if (!dailyTotals[date]) {
+      dailyTotals[date] = {
+        impression: 0, clicks: 0, expense: 0,
+        direct_order: 0, direct_gmv: 0,
+        broad_order: 0, broad_gmv: 0,
+        direct_item_sold: 0, broad_item_sold: 0,
+      };
+    }
+    dailyTotals[date].impression += Number(row.impression) || 0;
+    dailyTotals[date].clicks += Number(row.clicks) || 0;
+    dailyTotals[date].expense += Number(row.expense) || 0;
+    dailyTotals[date].direct_order += Number(row.direct_order) || 0;
+    dailyTotals[date].direct_gmv += Number(row.direct_gmv) || 0;
+    dailyTotals[date].broad_order += Number(row.broad_order) || 0;
+    dailyTotals[date].broad_gmv += Number(row.broad_gmv) || 0;
+    dailyTotals[date].direct_item_sold += Number(row.direct_item_sold) || 0;
+    dailyTotals[date].broad_item_sold += Number(row.broad_item_sold) || 0;
+  }
+
+  // Upsert daily shop-level data
+  const now = new Date().toISOString();
+  for (const [date, totals] of Object.entries(dailyTotals)) {
+    const ctr = totals.impression > 0 ? (totals.clicks / totals.impression) * 100 : 0;
+    const roas = totals.expense > 0 ? totals.broad_gmv / totals.expense : 0;
+    const acos = totals.broad_gmv > 0 ? (totals.expense / totals.broad_gmv) * 100 : 0;
+
+    await supabase
+      .from('apishopee_ads_shop_performance_daily')
+      .upsert({
+        shop_id: shopId,
+        performance_date: date,
+        impression: totals.impression,
+        clicks: totals.clicks,
+        ctr,
+        expense: totals.expense,
+        direct_order: totals.direct_order,
+        direct_gmv: totals.direct_gmv,
+        broad_order: totals.broad_order,
+        broad_gmv: totals.broad_gmv,
+        direct_item_sold: totals.direct_item_sold,
+        broad_item_sold: totals.broad_item_sold,
+        roas,
+        acos,
+        synced_at: now,
+      }, { onConflict: 'shop_id,performance_date' });
+  }
+
+  console.log(`[ADS-SYNC] Aggregated ${Object.keys(dailyTotals).length} days of daily data`);
+
+  // Aggregate HOURLY performance for today only
+  const todayDate = formatDateForDB(today);
+  const { data: hourlyData, error: hourlyError } = await supabase
+    .from('apishopee_ads_performance_hourly')
+    .select('hour, impression, clicks, expense, direct_order, direct_gmv, broad_order, broad_gmv, direct_item_sold, broad_item_sold')
+    .eq('shop_id', shopId)
+    .eq('performance_date', todayDate);
+
+  if (hourlyError) {
+    console.error('[ADS-SYNC] Error fetching campaign hourly data:', hourlyError);
+    return;
+  }
+
+  // Group by hour
+  const hourlyTotals: Record<number, {
+    impression: number; clicks: number; expense: number;
+    direct_order: number; direct_gmv: number;
+    broad_order: number; broad_gmv: number;
+    direct_item_sold: number; broad_item_sold: number;
+  }> = {};
+
+  for (const row of hourlyData || []) {
+    const hour = row.hour;
+    if (!hourlyTotals[hour]) {
+      hourlyTotals[hour] = {
+        impression: 0, clicks: 0, expense: 0,
+        direct_order: 0, direct_gmv: 0,
+        broad_order: 0, broad_gmv: 0,
+        direct_item_sold: 0, broad_item_sold: 0,
+      };
+    }
+    hourlyTotals[hour].impression += Number(row.impression) || 0;
+    hourlyTotals[hour].clicks += Number(row.clicks) || 0;
+    hourlyTotals[hour].expense += Number(row.expense) || 0;
+    hourlyTotals[hour].direct_order += Number(row.direct_order) || 0;
+    hourlyTotals[hour].direct_gmv += Number(row.direct_gmv) || 0;
+    hourlyTotals[hour].broad_order += Number(row.broad_order) || 0;
+    hourlyTotals[hour].broad_gmv += Number(row.broad_gmv) || 0;
+    hourlyTotals[hour].direct_item_sold += Number(row.direct_item_sold) || 0;
+    hourlyTotals[hour].broad_item_sold += Number(row.broad_item_sold) || 0;
+  }
+
+  // Upsert hourly shop-level data
+  for (const [hourStr, totals] of Object.entries(hourlyTotals)) {
+    const hour = parseInt(hourStr);
+    const ctr = totals.impression > 0 ? (totals.clicks / totals.impression) * 100 : 0;
+    const roas = totals.expense > 0 ? totals.broad_gmv / totals.expense : 0;
+    const acos = totals.broad_gmv > 0 ? (totals.expense / totals.broad_gmv) * 100 : 0;
+
+    await supabase
+      .from('apishopee_ads_shop_performance_hourly')
+      .upsert({
+        shop_id: shopId,
+        performance_date: todayDate,
+        hour,
+        impression: totals.impression,
+        clicks: totals.clicks,
+        ctr,
+        expense: totals.expense,
+        direct_order: totals.direct_order,
+        direct_gmv: totals.direct_gmv,
+        broad_order: totals.broad_order,
+        broad_gmv: totals.broad_gmv,
+        direct_item_sold: totals.direct_item_sold,
+        broad_item_sold: totals.broad_item_sold,
+        roas,
+        acos,
+        synced_at: now,
+      }, { onConflict: 'shop_id,performance_date,hour' });
+  }
+
+  console.log(`[ADS-SYNC] Aggregated ${Object.keys(hourlyTotals).length} hours of hourly data`);
+}
+
+/**
  * Update sync status
  */
 async function updateSyncStatus(
@@ -1129,30 +1392,35 @@ async function syncAdsData(
     // Get credentials
     const credentials = await getShopCredentials(supabase, shopId);
 
-    // Step 0: Sync shop-level performance (nhanh, không phụ thuộc số campaigns)
-    console.log('[ADS-SYNC] === SHOP-LEVEL PERFORMANCE ===');
-    await syncShopLevelDailyPerformance(supabase, credentials, shopId);
-    await syncShopLevelHourlyPerformance(supabase, credentials, shopId);
-    console.log('[ADS-SYNC] === END SHOP-LEVEL ===');
-
     // Step 1: Sync campaigns (lấy danh sách)
     await updateSyncStatus(supabase, shopId, {
       sync_progress: { step: 'syncing_campaigns', progress: 20 },
     });
-    const { total, ongoing, ongoingCampaigns } = await syncCampaigns(supabase, credentials, shopId);
+    const { total, ongoing, allCampaigns } = await syncCampaigns(supabase, credentials, shopId);
 
-    // Step 2: Sync daily performance - CHỈ ONGOING CAMPAIGNS để nhanh
+    // Step 2: Sync daily performance - TẤT CẢ CAMPAIGNS (giống sync thủ công)
+    // QUAN TRỌNG: Phải sync campaign-level TRƯỚC shop-level để có item_sold data
     await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_daily_performance', progress: 50 },
+      sync_progress: { step: 'syncing_daily_performance', progress: 40 },
     });
-    // REALTIME: Chỉ sync ongoing campaigns (ít hơn nhiều)
-    const dailyRecords = await syncDailyPerformance(supabase, credentials, shopId, ongoingCampaigns);
+    const dailyRecords = await syncDailyPerformance(supabase, credentials, shopId, allCampaigns);
 
-    // Step 3: Sync hourly performance - CHỈ ONGOING CAMPAIGNS
+    // Step 3: Sync hourly performance - TẤT CẢ CAMPAIGNS (giống sync thủ công)
+    // QUAN TRỌNG: Phải sync campaign-level TRƯỚC shop-level để có item_sold data
     await updateSyncStatus(supabase, shopId, {
-      sync_progress: { step: 'syncing_hourly_performance', progress: 80 },
+      sync_progress: { step: 'syncing_hourly_performance', progress: 60 },
     });
-    const hourlyRecords = await syncHourlyPerformance(supabase, credentials, shopId, ongoingCampaigns);
+    const hourlyRecords = await syncHourlyPerformance(supabase, credentials, shopId, allCampaigns);
+
+    // Step 4: Sync shop-level performance (sau khi có campaign data để tính item_sold)
+    // QUAN TRỌNG: Shop-level phụ thuộc vào campaign-level data cho item_sold field
+    await updateSyncStatus(supabase, shopId, {
+      sync_progress: { step: 'syncing_shop_level', progress: 80 },
+    });
+    console.log('[ADS-SYNC] === SHOP-LEVEL PERFORMANCE (after campaign data) ===');
+    await syncShopLevelDailyPerformance(supabase, credentials, shopId);
+    await syncShopLevelHourlyPerformance(supabase, credentials, shopId);
+    console.log('[ADS-SYNC] === END SHOP-LEVEL ===');
 
     // Update status: completed
     await updateSyncStatus(supabase, shopId, {
@@ -1164,12 +1432,23 @@ async function syncAdsData(
       ongoing_campaigns: ongoing,
     });
 
-    console.log(`[ADS-SYNC] Sync completed for shop ${shopId} (${ongoing} ongoing campaigns)`);
+    console.log(`[ADS-SYNC] === SYNC COMPLETED SUCCESSFULLY ===`);
+    console.log(`[ADS-SYNC] Shop ID: ${shopId}`);
+    console.log(`[ADS-SYNC] Total Campaigns: ${total}`);
+    console.log(`[ADS-SYNC] Ongoing Campaigns: ${ongoing}`);
+    console.log(`[ADS-SYNC] Daily Performance Records: ${dailyRecords}`);
+    console.log(`[ADS-SYNC] Hourly Performance Records: ${hourlyRecords}`);
+    console.log(`[ADS-SYNC] Sync Time: ${new Date().toISOString()}`);
+    console.log(`[ADS-SYNC] === END ===`);
+
     return {
       success: true,
-      campaigns_synced: ongoing,
+      campaigns_synced: total,
       daily_records: dailyRecords,
       hourly_records: hourlyRecords,
+      total_campaigns: total,
+      ongoing_campaigns: ongoing,
+      sync_time: new Date().toISOString(),
     };
   } catch (error) {
     const errorMessage = (error as Error).message;
@@ -1295,12 +1574,16 @@ async function syncAdsDataBackfill(
 // ==================== MAIN HANDLER ====================
 
 serve(async (req) => {
+  console.log(`[ADS-SYNC] === REQUEST RECEIVED === Method: ${req.method}, URL: ${req.url}`);
+
   if (req.method === 'OPTIONS') {
+    console.log('[ADS-SYNC] OPTIONS request handled');
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
     const body = await req.json();
+    console.log('[ADS-SYNC] Request body:', JSON.stringify(body, null, 2));
     const { action, shop_id } = body;
 
     if (!shop_id) {
@@ -1389,6 +1672,410 @@ serve(async (req) => {
         );
       }
 
+      case 'sync_campaigns_only': {
+        // OPTIMIZED: Chỉ sync campaigns (nhanh nhất, ~5-15s)
+        console.log(`[ADS-SYNC] === SYNC CAMPAIGNS ONLY ===`);
+
+        await updateSyncStatus(supabase, shop_id, {
+          is_syncing: true,
+          sync_progress: { step: 'syncing_campaigns', progress: 50 },
+        });
+
+        try {
+          const credentials = await getShopCredentials(supabase, shop_id);
+          const { total, ongoing, allCampaigns } = await syncCampaigns(supabase, credentials, shop_id);
+
+          await updateSyncStatus(supabase, shop_id, {
+            is_syncing: false,
+            last_sync_at: new Date().toISOString(),
+            sync_progress: { step: 'completed', progress: 100 },
+            total_campaigns: total,
+            ongoing_campaigns: ongoing,
+          });
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              campaigns_synced: total,
+              ongoing_campaigns: ongoing,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        } catch (error) {
+          await updateSyncStatus(supabase, shop_id, {
+            is_syncing: false,
+            last_sync_error: (error as Error).message,
+          });
+          throw error;
+        }
+      }
+
+      case 'sync_performance_only': {
+        // OPTIMIZED: Chỉ sync performance (không sync campaigns, ~10-30s)
+        console.log(`[ADS-SYNC] === SYNC PERFORMANCE ONLY ===`);
+
+        await updateSyncStatus(supabase, shop_id, {
+          is_syncing: true,
+          sync_progress: { step: 'syncing_performance', progress: 20 },
+        });
+
+        try {
+          const credentials = await getShopCredentials(supabase, shop_id);
+
+          // Lấy campaigns từ DB thay vì gọi API
+          const { data: campaigns } = await supabase
+            .from('apishopee_ads_campaign_data')
+            .select('campaign_id, ad_type, status')
+            .eq('shop_id', shop_id);
+
+          if (!campaigns || campaigns.length === 0) {
+            throw new Error('No campaigns found. Please sync campaigns first.');
+          }
+
+          const campaignInfos: CampaignInfo[] = campaigns.map(c => ({
+            campaign_id: c.campaign_id,
+            ad_type: c.ad_type,
+            status: c.status,
+          } as CampaignInfo));
+
+          // Sync daily performance
+          await updateSyncStatus(supabase, shop_id, {
+            sync_progress: { step: 'syncing_daily_performance', progress: 40 },
+          });
+          const dailyRecords = await syncDailyPerformance(supabase, credentials, shop_id, campaignInfos);
+
+          // Sync hourly performance
+          await updateSyncStatus(supabase, shop_id, {
+            sync_progress: { step: 'syncing_hourly_performance', progress: 60 },
+          });
+          const hourlyRecords = await syncHourlyPerformance(supabase, credentials, shop_id, campaignInfos);
+
+          // Sync shop-level
+          await updateSyncStatus(supabase, shop_id, {
+            sync_progress: { step: 'syncing_shop_level', progress: 80 },
+          });
+          await syncShopLevelDailyPerformance(supabase, credentials, shop_id);
+          await syncShopLevelHourlyPerformance(supabase, credentials, shop_id);
+
+          await updateSyncStatus(supabase, shop_id, {
+            is_syncing: false,
+            last_sync_at: new Date().toISOString(),
+            sync_progress: { step: 'completed', progress: 100 },
+          });
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              daily_records: dailyRecords,
+              hourly_records: hourlyRecords,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        } catch (error) {
+          await updateSyncStatus(supabase, shop_id, {
+            is_syncing: false,
+            last_sync_error: (error as Error).message,
+          });
+          throw error;
+        }
+      }
+
+      case 'sync_campaigns_chunk': {
+        // CHUNKED SYNC: Sync 1 chunk campaigns (for large shops >200 campaigns)
+        // params: { offset, limit, chunk_index, total_chunks }
+        const params = body.params || {};
+        const offset = params.offset || 0;
+        const limit = params.limit || 100;
+        const chunk_index = params.chunk_index ?? 0;
+        const total_chunks = params.total_chunks ?? 1;
+
+        console.log(`[ADS-SYNC] === SYNC CAMPAIGNS CHUNK ${chunk_index + 1}/${total_chunks} ===`);
+        console.log(`[ADS-SYNC] Offset: ${offset}, Limit: ${limit}`);
+
+        try {
+          const credentials = await getShopCredentials(supabase, shop_id);
+
+          // Step 1: Get ALL campaign IDs (we need total count)
+          const idListResult = await callShopeeAPI(
+            credentials,
+            shop_id,
+            '/api/v2/ads/get_product_level_campaign_id_list',
+            'GET',
+            { ad_type: 'all', offset: 0, limit: 5000 }
+          );
+
+          if (idListResult.error) {
+            throw new Error(`Failed to get campaign list: ${idListResult.message || idListResult.error}`);
+          }
+
+          const allCampaignIds = idListResult.response?.campaign_list || [];
+          console.log(`[ADS-SYNC] Total campaigns: ${allCampaignIds.length}`);
+
+          // Step 2: Slice to get THIS chunk only
+          const chunk = allCampaignIds.slice(offset, offset + limit);
+          console.log(`[ADS-SYNC] Chunk ${chunk_index + 1}: Processing ${chunk.length} campaigns (${offset} to ${offset + chunk.length - 1})`);
+
+          if (chunk.length === 0) {
+            // Update progress - this chunk is done
+            await supabase.rpc('update_chunk_progress', {
+              p_shop_id: shop_id,
+              p_chunk_index: chunk_index,
+              p_synced_count: 0,
+              p_success: true
+            });
+
+            return new Response(
+              JSON.stringify({
+                success: true,
+                chunk_index,
+                total_chunks,
+                campaigns_synced: 0,
+                message: 'No campaigns in this chunk'
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          // Step 3: Get details for this chunk (batch 100)
+          const allCampaigns: CampaignInfo[] = [];
+          const detailBatchSize = 100;
+
+          for (let i = 0; i < chunk.length; i += detailBatchSize) {
+            const batch = chunk.slice(i, i + detailBatchSize);
+            const campaignIds = batch.map((c: { campaign_id: number }) => c.campaign_id).join(',');
+
+            const detailResult = await callShopeeAPI(
+              credentials,
+              shop_id,
+              '/api/v2/ads/get_product_level_campaign_setting_info',
+              'GET',
+              { campaign_id_list: campaignIds, info_type_list: '1,3' }
+            );
+
+            if (detailResult.response?.campaign_list) {
+              for (const detail of detailResult.response.campaign_list) {
+                const original = batch.find((c: { campaign_id: number }) => c.campaign_id === detail.campaign_id);
+                const campaignInfo: CampaignInfo = {
+                  campaign_id: detail.campaign_id,
+                  ad_type: original?.ad_type || detail.common_info?.ad_type || 'auto',
+                  name: detail.common_info?.ad_name,
+                  status: detail.common_info?.campaign_status,
+                  campaign_budget: detail.common_info?.campaign_budget,
+                  campaign_placement: detail.common_info?.campaign_placement,
+                  bidding_method: detail.common_info?.bidding_method,
+                  roas_target: detail.auto_bidding_info?.roas_target || null,
+                  start_time: detail.common_info?.campaign_duration?.start_time,
+                  end_time: detail.common_info?.campaign_duration?.end_time,
+                  item_count: detail.common_info?.item_id_list?.length || 0,
+                };
+
+                allCampaigns.push(campaignInfo);
+              }
+            }
+          }
+
+          // Step 4: Upsert to database
+          const now = new Date().toISOString();
+          const upsertData = allCampaigns.map(c => ({
+            shop_id: shop_id,
+            campaign_id: c.campaign_id,
+            ad_type: c.ad_type,
+            name: c.name || null,
+            status: c.status || null,
+            campaign_placement: c.campaign_placement || null,
+            bidding_method: c.bidding_method || null,
+            campaign_budget: c.campaign_budget || 0,
+            start_time: c.start_time || null,
+            end_time: c.end_time || null,
+            item_count: c.item_count || 0,
+            roas_target: c.roas_target,
+            synced_at: now,
+            cached_at: now,
+          }));
+
+          const { error: upsertError } = await supabase
+            .from('apishopee_ads_campaign_data')
+            .upsert(upsertData, { onConflict: 'shop_id,campaign_id' });
+
+          if (upsertError) {
+            console.error('[ADS-SYNC] Upsert chunk campaigns error:', upsertError);
+
+            // Update progress - failed
+            await supabase.rpc('update_chunk_progress', {
+              p_shop_id: shop_id,
+              p_chunk_index: chunk_index,
+              p_synced_count: 0,
+              p_success: false,
+              p_error_message: upsertError.message
+            });
+
+            throw new Error(`Failed to save campaigns: ${upsertError.message}`);
+          }
+
+          // Step 5: Update progress
+          await supabase.rpc('update_chunk_progress', {
+            p_shop_id: shop_id,
+            p_chunk_index: chunk_index,
+            p_synced_count: allCampaigns.length,
+            p_success: true
+          });
+
+          console.log(`[ADS-SYNC] Chunk ${chunk_index + 1}/${total_chunks} completed: ${allCampaigns.length} campaigns synced`);
+
+          // Step 6: Check if ALL chunks are done
+          const { data: progressData } = await supabase
+            .from('apishopee_ads_sync_progress')
+            .select('current_chunk, total_chunks, synced_campaigns, total_campaigns')
+            .eq('shop_id', shop_id)
+            .single();
+
+          const isLastChunk = progressData && (progressData.current_chunk >= progressData.total_chunks - 1);
+
+          if (isLastChunk) {
+            console.log('[ADS-SYNC] All chunks completed! Moving to performance sync stage');
+
+            // Mark campaigns stage complete, prepare for performance stage
+            await supabase.rpc('complete_sync_progress', {
+              p_shop_id: shop_id,
+              p_stage: 'syncing_performance'
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              chunk_index,
+              total_chunks,
+              campaigns_synced: allCampaigns.length,
+              progress: progressData,
+              is_last_chunk: isLastChunk
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        } catch (error) {
+          console.error(`[ADS-SYNC] Chunk ${chunk_index + 1} failed:`, error);
+
+          // Update progress - failed
+          await supabase.rpc('update_chunk_progress', {
+            p_shop_id: shop_id,
+            p_chunk_index: chunk_index,
+            p_synced_count: 0,
+            p_success: false,
+            p_error_message: (error as Error).message
+          });
+
+          throw error;
+        }
+      }
+
+      case 'sync_performance_chunk': {
+        // CHUNKED PERFORMANCE SYNC: Sync performance for a subset of campaigns
+        // params: { campaign_ids, chunk_index, total_chunks }
+        const params = body.params || {};
+        const campaignIds: number[] = params.campaign_ids || [];
+        const chunk_index = params.chunk_index ?? 0;
+        const total_chunks = params.total_chunks ?? 1;
+
+        console.log(`[ADS-SYNC] === SYNC PERFORMANCE CHUNK ${chunk_index + 1}/${total_chunks} ===`);
+        console.log(`[ADS-SYNC] Campaigns in chunk: ${campaignIds.length}`);
+
+        if (campaignIds.length === 0) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              chunk_index,
+              total_chunks,
+              daily_records: 0,
+              hourly_records: 0,
+              message: 'No campaigns in this chunk'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        try {
+          const credentials = await getShopCredentials(supabase, shop_id);
+
+          // Fetch campaign details from database to get correct ad_type
+          const { data: campaignData, error: campaignError } = await supabase
+            .from('apishopee_ads_campaign_data')
+            .select('campaign_id, ad_type')
+            .eq('shop_id', shop_id)
+            .in('campaign_id', campaignIds);
+
+          if (campaignError) {
+            console.error('[ADS-SYNC] Error fetching campaign details:', campaignError);
+            throw campaignError;
+          }
+
+          // Map campaign ad_type
+          const typeMap: Record<number, 'auto' | 'manual'> = {};
+          for (const c of campaignData || []) {
+            typeMap[c.campaign_id] = c.ad_type === 'manual' ? 'manual' : 'auto';
+          }
+
+          // Build campaign info array with correct ad_type
+          const campaignInfos: CampaignInfo[] = campaignIds.map(id => ({
+            campaign_id: id,
+            ad_type: typeMap[id] || 'auto',
+          }));
+
+          console.log(`[ADS-SYNC] Campaign types: auto=${campaignInfos.filter(c => c.ad_type === 'auto').length}, manual=${campaignInfos.filter(c => c.ad_type === 'manual').length}`);
+
+          const today = getVietnamDate();
+
+          // Sync daily performance for this chunk
+          const dailyRecords = await syncDailyPerformanceForDate(
+            supabase, credentials, shop_id, campaignInfos, today
+          );
+
+          // Sync hourly performance for this chunk
+          const hourlyRecords = await syncHourlyPerformanceForDate(
+            supabase, credentials, shop_id, campaignInfos, today
+          );
+
+          console.log(`[ADS-SYNC] Performance chunk ${chunk_index + 1}/${total_chunks} completed`);
+          console.log(`[ADS-SYNC] Daily records: ${dailyRecords}, Hourly records: ${hourlyRecords}`);
+
+          // If last chunk, update shop-level aggregates and sync status
+          const isLastChunk = chunk_index >= total_chunks - 1;
+
+          if (isLastChunk) {
+            console.log('[ADS-SYNC] Last performance chunk - syncing shop-level data from Shopee API');
+
+            // IMPORTANT: Call Shop-Level API to get item_sold data
+            // Campaign-level API does NOT return item_sold, only Shop-Level API does
+            // This ensures shop-level data includes correct item_sold values
+            await syncShopLevelDailyPerformance(supabase, credentials, shop_id);
+            await syncShopLevelHourlyPerformance(supabase, credentials, shop_id);
+
+            // Update sync status
+            await updateSyncStatus(supabase, shop_id, {
+              is_syncing: false,
+              last_sync_at: new Date().toISOString(),
+              last_sync_error: null,
+              sync_progress: { step: 'completed', progress: 100 },
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              chunk_index,
+              total_chunks,
+              campaigns_processed: campaignIds.length,
+              daily_records: dailyRecords,
+              hourly_records: hourlyRecords,
+              is_last_chunk: isLastChunk
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        } catch (error) {
+          console.error(`[ADS-SYNC] Performance chunk ${chunk_index + 1} failed:`, error);
+          throw error;
+        }
+      }
+
       case 'status': {
         const { data, error } = await supabase
           .from('apishopee_ads_sync_status')
@@ -1417,7 +2104,19 @@ serve(async (req) => {
 
       default:
         return new Response(
-          JSON.stringify({ error: 'Invalid action. Use: sync, sync_day, backfill, status' }),
+          JSON.stringify({
+            error: 'Invalid action',
+            available_actions: [
+              'sync - Full sync (campaigns + performance)',
+              'sync_campaigns_only - Only sync campaigns (fast)',
+              'sync_performance_only - Only sync performance data',
+              'sync_campaigns_chunk - Sync 1 chunk of campaigns (for large shops)',
+              'sync_performance_chunk - Sync 1 chunk of performance data (for large shops)',
+              'sync_day - Sync specific day',
+              'backfill - Backfill 7 days',
+              'status - Get sync status'
+            ]
+          }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
