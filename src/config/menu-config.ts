@@ -18,6 +18,7 @@ import {
   Megaphone,
   Clock,
   BarChart3,
+  ShoppingBag,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -115,6 +116,18 @@ export const menuItems: MenuItem[] = [
       { title: 'Đơn hàng', icon: ShoppingCart, path: '/analytics/orders', permissionKey: 'analytics' },
       { title: 'Đánh giá', icon: Star, path: '/analytics/reviews', permissionKey: 'analytics' },
       { title: 'Chiến dịch', icon: Megaphone, path: '/analytics/campaigns', permissionKey: 'analytics' },
+    ],
+  },
+  {
+    title: 'Lazada',
+    icon: ShoppingBag,
+    permissionKey: 'lazada',
+    description: 'Quản lý Lazada',
+    children: [
+      { title: 'Tổng quan', icon: Home, path: '/lazada', permissionKey: 'lazada' },
+      { title: 'Quản lý Shop', icon: Store, path: '/lazada/shops', permissionKey: 'lazada' },
+      { title: 'Đơn hàng', icon: ShoppingCart, path: '/lazada/orders', permissionKey: 'lazada' },
+      { title: 'Sản phẩm', icon: Package, path: '/lazada/products', permissionKey: 'lazada' },
     ],
   },
   {

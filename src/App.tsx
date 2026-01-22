@@ -6,6 +6,7 @@ import { Toaster as Sonner } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ShopeeAuthProvider } from '@/contexts/ShopeeAuthContext';
+import { LazadaAuthProvider } from '@/contexts/LazadaAuthContext';
 
 // Layout
 import MainLayout from '@/components/layout/MainLayout';
@@ -42,6 +43,13 @@ import AnalyticsOrdersPage from '@/pages/analytics/AnalyticsOrdersPage';
 import AnalyticsReviewsPage from '@/pages/analytics/AnalyticsReviewsPage';
 import AnalyticsCampaignsPage from '@/pages/analytics/AnalyticsCampaignsPage';
 
+// Lazada Pages
+import LazadaDashboardPage from '@/pages/lazada/LazadaDashboardPage';
+import LazadaShopsPage from '@/pages/lazada/LazadaShopsPage';
+import LazadaOrdersPage from '@/pages/lazada/LazadaOrdersPage';
+import LazadaProductsPage from '@/pages/lazada/LazadaProductsPage';
+import LazadaCallbackPage from '@/pages/lazada/LazadaCallbackPage';
+
 function App() {
   const [queryClient] = useState(
     () =>
@@ -62,7 +70,8 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ShopeeAuthProvider>
-          <TooltipProvider>
+          <LazadaAuthProvider>
+            <TooltipProvider>
             <Toaster />
             <Sonner />
             <BrowserRouter>
@@ -70,6 +79,7 @@ function App() {
                 {/* Public routes */}
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/lazada/callback" element={<LazadaCallbackPage />} />
 
                 {/* Protected routes with MainLayout */}
                 <Route element={<MainLayout />}>
@@ -98,13 +108,20 @@ function App() {
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />
                   <Route path="/settings/shops" element={<ShopsSettingsPage />} />
                   <Route path="/settings/users" element={<UsersSettingsPage />} />
+
+                  {/* Lazada Routes */}
+                  <Route path="/lazada" element={<LazadaDashboardPage />} />
+                  <Route path="/lazada/shops" element={<LazadaShopsPage />} />
+                  <Route path="/lazada/orders" element={<LazadaOrdersPage />} />
+                  <Route path="/lazada/products" element={<LazadaProductsPage />} />
                 </Route>
 
                 {/* 404 */}
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </BrowserRouter>
-          </TooltipProvider>
+            </TooltipProvider>
+          </LazadaAuthProvider>
         </ShopeeAuthProvider>
       </AuthProvider>
     </QueryClientProvider>
