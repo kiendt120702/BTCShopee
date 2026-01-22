@@ -225,6 +225,36 @@ async function refreshAccessToken(
 }
 
 /**
+ * Extract seller_id từ Lazada token response
+ * Lazada trả về seller_id trong country_user_info array
+ */
+function extractSellerId(token: Record<string, unknown>): number | null {
+  // Cách 1: Từ country_user_info array (Lazada v2 API)
+  const countryUserInfo = token.country_user_info as Array<{
+    country: string;
+    user_id: string | number;
+    seller_id?: string | number;
+    short_code?: string;
+  }> | undefined;
+
+  if (countryUserInfo && countryUserInfo.length > 0) {
+    const firstUserInfo = countryUserInfo[0];
+    // Ưu tiên seller_id, fallback to user_id
+    const sellerId = firstUserInfo.seller_id || firstUserInfo.user_id;
+    return typeof sellerId === 'string' ? parseInt(sellerId, 10) : sellerId;
+  }
+
+  // Cách 2: Trực tiếp từ token (nếu Lazada trả về ở top-level)
+  if (token.user_id) {
+    return typeof token.user_id === 'string'
+      ? parseInt(token.user_id as string, 10)
+      : token.user_id as number;
+  }
+
+  return null;
+}
+
+/**
  * Lưu token vào Supabase
  */
 async function saveToken(
@@ -236,6 +266,16 @@ async function saveToken(
 ) {
   const now = new Date();
 
+  // Extract seller_id from token response
+  const sellerId = extractSellerId(token);
+
+  if (!sellerId) {
+    console.error('[LAZADA] Cannot extract seller_id from token response:', JSON.stringify(token, null, 2));
+    throw new Error('Cannot extract seller_id from Lazada response');
+  }
+
+  console.log('[LAZADA] Extracted seller_id:', sellerId);
+
   // Lazada returns expires_in in seconds (usually 604800 = 7 days for access token)
   const accessTokenExpiresAt = new Date(now.getTime() + (token.expires_in as number) * 1000);
 
@@ -244,8 +284,15 @@ async function saveToken(
     ? new Date(now.getTime() + (token.refresh_expires_in as number) * 1000)
     : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
+  // Extract short_code từ country_user_info nếu có
+  let shortCode = token.account as string | undefined;
+  const countryUserInfo = token.country_user_info as Array<{ short_code?: string }> | undefined;
+  if (countryUserInfo && countryUserInfo.length > 0 && countryUserInfo[0].short_code) {
+    shortCode = countryUserInfo[0].short_code;
+  }
+
   const shopData: Record<string, unknown> = {
-    seller_id: token.user_id, // Lazada calls it user_id but it's the seller ID
+    seller_id: sellerId,
     access_token: token.access_token,
     refresh_token: token.refresh_token,
     access_token_expires_at: accessTokenExpiresAt.toISOString(),
@@ -253,7 +300,7 @@ async function saveToken(
     token_updated_at: now.toISOString(),
     region: region,
     country: token.country,
-    short_code: token.account,
+    short_code: shortCode,
   };
 
   // Thêm account platform info nếu có
@@ -273,7 +320,7 @@ async function saveToken(
     }
   }
 
-  console.log('[LAZADA] Saving token for seller:', token.user_id);
+  console.log('[LAZADA] Saving token for seller:', sellerId);
 
   const { error } = await supabase.from('apilazada_shops').upsert(shopData, {
     onConflict: 'seller_id',
@@ -285,6 +332,9 @@ async function saveToken(
   }
 
   console.log('[LAZADA] Token saved successfully');
+
+  // Return seller_id for use in caller
+  return sellerId;
 }
 
 /**
@@ -420,10 +470,10 @@ serve(async (req) => {
         }
 
         // Save token to database
-        console.log('[LAZADA] Saving token to database for user_id:', token.user_id);
+        let savedSellerId: number;
         try {
-          await saveToken(supabase, token, region, userId, credentials);
-          console.log('[LAZADA] Token saved successfully');
+          savedSellerId = await saveToken(supabase, token, region, userId, credentials);
+          console.log('[LAZADA] Token saved successfully for seller:', savedSellerId);
         } catch (saveError) {
           console.error('[LAZADA] Failed to save token:', saveError);
           return new Response(JSON.stringify({
@@ -446,7 +496,7 @@ serve(async (req) => {
               shop_name: sellerInfo.data.name || sellerInfo.data.short_code,
               email: sellerInfo.data.email,
               seller_status: sellerInfo.data.status,
-            }).eq('seller_id', token.user_id);
+            }).eq('seller_id', savedSellerId);
             console.log('[LAZADA] Shop updated with seller info');
           }
         } catch (e) {
@@ -456,6 +506,7 @@ serve(async (req) => {
         console.log('[LAZADA] get-token completed successfully');
         return new Response(JSON.stringify({
           ...token,
+          user_id: savedSellerId, // Ensure user_id is in response for frontend
           success: true,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
