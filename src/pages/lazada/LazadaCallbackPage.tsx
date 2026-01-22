@@ -11,6 +11,10 @@ import { Spinner } from '@/components/ui/spinner';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+// Global flag để ngăn chặn việc xử lý callback nhiều lần (quan trọng!)
+// Authorization code của Lazada chỉ được sử dụng 1 lần
+const processedCodes = new Set<string>();
+
 export default function LazadaCallbackPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -25,16 +29,26 @@ export default function LazadaCallbackPage() {
     // Đợi auth load xong trước khi xử lý callback
     if (authLoading) return;
 
-    // Tránh xử lý nhiều lần
-    if (processedRef.current || isProcessing) return;
+    // Tránh xử lý nhiều lần - check cả ref và state
+    if (processedRef.current) return;
+
+    const code = searchParams.get('code');
+    const errorParam = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+
+    console.log('[LAZADA-CALLBACK] Processing:', {
+      code: code?.substring(0, 20) + '...',
+      errorParam,
+      alreadyProcessed: code ? processedCodes.has(code) : false
+    });
+
+    // Kiểm tra nếu code đã được xử lý (global check)
+    if (code && processedCodes.has(code)) {
+      console.log('[LAZADA-CALLBACK] Code already processed, skipping');
+      return;
+    }
 
     const processCallback = async () => {
-      const code = searchParams.get('code');
-      const errorParam = searchParams.get('error');
-      const errorDescription = searchParams.get('error_description');
-
-      console.log('[LAZADA-CALLBACK] Processing:', { code: code?.substring(0, 10), errorParam });
-
       if (errorParam) {
         const errorMsg = errorDescription || `Lazada authorization failed: ${errorParam}`;
         setError(errorMsg);
@@ -69,11 +83,16 @@ export default function LazadaCallbackPage() {
         return;
       }
 
+      // QUAN TRỌNG: Đánh dấu code đã được xử lý TRƯỚC khi gọi API
+      // để tránh race condition khi React re-render
       processedRef.current = true;
+      processedCodes.add(code);
       setIsProcessing(true);
 
       try {
+        console.log('[LAZADA-CALLBACK] Calling handleCallback with code...');
         const result = await handleCallback(code);
+        console.log('[LAZADA-CALLBACK] handleCallback result:', result);
 
         if (result) {
           setSuccess(true);
@@ -90,7 +109,8 @@ export default function LazadaCallbackPage() {
           throw new Error('Failed to connect Lazada shop');
         }
       } catch (err) {
-        processedRef.current = false;
+        console.error('[LAZADA-CALLBACK] Error:', err);
+        // Không reset processedRef vì code đã hết hạn sau khi dùng
         const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
         setError(errorMessage);
 
@@ -105,7 +125,7 @@ export default function LazadaCallbackPage() {
     };
 
     processCallback();
-  }, [searchParams, handleCallback, navigate, authLoading, isAuthenticated, isProcessing]);
+  }, [searchParams, handleCallback, navigate, authLoading, isAuthenticated]);
 
   if (success) {
     return (

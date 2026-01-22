@@ -387,15 +387,28 @@ serve(async (req) => {
         const sellerId = body.seller_id ? Number(body.seller_id) : undefined;
 
         console.log('[LAZADA] get-token request:', {
-          code: code.substring(0, 10) + '...',
+          code: code.substring(0, 20) + '...',
+          codeLength: code.length,
           region,
           hasAppInfo: !!appInfo
         });
 
         const credentials = await getAppCredentials(supabase, appInfo, sellerId);
+        console.log('[LAZADA] Using credentials app_key:', credentials.appKey);
+
         const token = await getAccessToken(credentials, code, region);
+        console.log('[LAZADA] Token API response:', {
+          code: token.code,
+          message: token.message,
+          hasAccessToken: !!token.access_token,
+          hasRefreshToken: !!token.refresh_token,
+          userId: token.user_id,
+          expiresIn: token.expires_in,
+          country: token.country
+        });
 
         if (token.code && token.code !== '0') {
+          console.error('[LAZADA] Token exchange failed:', token.code, token.message);
           return new Response(JSON.stringify({
             error: token.code,
             message: token.message,
@@ -407,11 +420,26 @@ serve(async (req) => {
         }
 
         // Save token to database
-        await saveToken(supabase, token, region, userId, credentials);
+        console.log('[LAZADA] Saving token to database for user_id:', token.user_id);
+        try {
+          await saveToken(supabase, token, region, userId, credentials);
+          console.log('[LAZADA] Token saved successfully');
+        } catch (saveError) {
+          console.error('[LAZADA] Failed to save token:', saveError);
+          return new Response(JSON.stringify({
+            error: 'database_error',
+            message: (saveError as Error).message,
+            success: false
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
 
         // Try to get seller info
         try {
           const sellerInfo = await getSellerInfo(credentials, token.access_token as string, region);
+          console.log('[LAZADA] Seller info:', sellerInfo);
           if (sellerInfo.data) {
             // Update shop with seller info
             await supabase.from('apilazada_shops').update({
@@ -419,11 +447,13 @@ serve(async (req) => {
               email: sellerInfo.data.email,
               seller_status: sellerInfo.data.status,
             }).eq('seller_id', token.user_id);
+            console.log('[LAZADA] Shop updated with seller info');
           }
         } catch (e) {
           console.error('[LAZADA] Failed to get seller info:', e);
         }
 
+        console.log('[LAZADA] get-token completed successfully');
         return new Response(JSON.stringify({
           ...token,
           success: true,

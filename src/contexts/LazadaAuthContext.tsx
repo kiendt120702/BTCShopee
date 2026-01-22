@@ -133,7 +133,10 @@ export function LazadaAuthProvider({ children }: { children: ReactNode }) {
       region: string = LAZADA_CONFIG.DEFAULT_REGION,
       appInfo?: LazadaAppInfo
     ): Promise<boolean> => {
+      console.log('[LAZADA-CONTEXT] handleCallback called with code:', code?.substring(0, 20) + '...');
+
       if (!user?.id) {
+        console.error('[LAZADA-CONTEXT] User not authenticated');
         setError('User not authenticated');
         return false;
       }
@@ -149,26 +152,41 @@ export function LazadaAuthProvider({ children }: { children: ReactNode }) {
           if (savedAppInfo) {
             finalAppInfo = JSON.parse(savedAppInfo);
             localStorage.removeItem(LAZADA_STORAGE_KEYS.APP_INFO);
+            console.log('[LAZADA-CONTEXT] Using saved app info');
           }
         }
 
         // Exchange code for token
+        console.log('[LAZADA-CONTEXT] Calling getAccessToken...');
         const result = await getAccessToken(code, region, finalAppInfo);
+        console.log('[LAZADA-CONTEXT] getAccessToken result:', {
+          success: result.success,
+          error: result.error,
+          message: result.message,
+          user_id: result.user_id,
+          hasAccessToken: !!result.access_token
+        });
 
         if (!result.success || result.error) {
-          setError(result.message || result.error || 'Failed to get access token');
+          const errorMsg = result.message || result.error || 'Failed to get access token';
+          console.error('[LAZADA-CONTEXT] Token exchange failed:', errorMsg);
+          setError(errorMsg);
           return false;
         }
 
         // Get the shop that was just created/updated
-        const { data: shop } = await supabase
+        console.log('[LAZADA-CONTEXT] Fetching shop for seller_id:', result.user_id);
+        const { data: shop, error: shopError } = await supabase
           .from('apilazada_shops')
           .select('*')
           .eq('seller_id', result.user_id)
           .single();
 
+        console.log('[LAZADA-CONTEXT] Shop fetch result:', { shop: shop?.id, error: shopError });
+
         if (shop) {
           // Add current user as shop member
+          console.log('[LAZADA-CONTEXT] Adding shop member...');
           await addShopMember(shop.id, user.id);
 
           // Update state
@@ -177,11 +195,14 @@ export function LazadaAuthProvider({ children }: { children: ReactNode }) {
 
           // Reload shops list
           await loadShops();
+          console.log('[LAZADA-CONTEXT] Callback completed successfully');
+        } else {
+          console.error('[LAZADA-CONTEXT] Shop not found after token exchange');
         }
 
         return true;
       } catch (err) {
-        console.error('[LAZADA] Callback error:', err);
+        console.error('[LAZADA-CONTEXT] Callback error:', err);
         setError((err as Error).message);
         return false;
       } finally {

@@ -41,7 +41,8 @@
       "Bash(npx tsc:*)",
       "Bash(timeout:*)",
       "Bash(ping:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(supabase secrets set:*)"
     ]
   }
 }
