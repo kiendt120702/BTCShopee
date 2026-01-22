@@ -27,9 +27,9 @@ export default function MainLayout() {
     );
   }
 
-  // Redirect to login if not authenticated
+  // Redirect to landing page if not authenticated
   if (!isAuthenticated) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return (

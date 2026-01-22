@@ -3,27 +3,63 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+
+// Platform icons
+const ShopeeIcon = () => (
+  <img
+    src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRcS-HdfgUSCDmV_LNqOxasca8KcceWStGP_A&s"
+    alt="Shopee"
+    className="w-7 h-7 object-contain"
+  />
+);
+
+const LazadaIcon = () => (
+  <img
+    src="https://recland.s3.ap-southeast-1.amazonaws.com/company/19a57791bf92848b511de18eaebca94a.png"
+    alt="Lazada"
+    className="w-7 h-7 object-contain"
+  />
+);
+
+const TikTokIcon = () => (
+  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/>
+  </svg>
+);
+
+const FacebookIcon = () => (
+  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+  </svg>
+);
+
+const PLATFORMS = [
+  { name: 'Shopee', icon: ShopeeIcon, color: 'text-orange-500', bgColor: 'bg-orange-100', available: true },
+  { name: 'Lazada', icon: LazadaIcon, color: 'text-blue-600', bgColor: 'bg-blue-100', available: true },
+  { name: 'TikTok Shop', icon: TikTokIcon, color: 'text-slate-800', bgColor: 'bg-slate-100', available: false },
+  { name: 'Facebook', icon: FacebookIcon, color: 'text-blue-500', bgColor: 'bg-blue-100', available: false },
+];
 
 const FEATURES = [
   {
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
     ),
-    title: 'Kết nối Shop Shopee',
-    description: 'Xác thực và kết nối shop với Shopee Open Platform',
+    title: 'Kết nối đa nền tảng',
+    description: 'Shopee, Lazada, TikTok Shop, Facebook trong một nơi',
   },
   {
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>
     ),
-    title: 'Quản lý Shop',
-    description: 'Quản lý nhiều shop và theo dõi trạng thái xác thực',
+    title: 'Quản lý tập trung',
+    description: 'Quản lý nhiều shop, nhiều nền tảng từ một dashboard',
   },
   {
     icon: (
@@ -32,21 +68,23 @@ const FEATURES = [
       </svg>
     ),
     title: 'Auto Refresh Token',
-    description: 'Tự động làm mới token để duy trì kết nối',
+    description: 'Tự động làm mới token để duy trì kết nối liên tục',
   },
 ];
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { error, signIn, isAuthenticated } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const isDemo = searchParams.get('demo') === 'true';
+  const [email, setEmail] = useState(isDemo ? 'reviewer@betacom.agency' : '');
+  const [password, setPassword] = useState(isDemo ? 'ShopeeISV@2024' : '');
   const [localError, setLocalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     }
   }, [isAuthenticated, navigate]);
 
@@ -92,11 +130,29 @@ export default function AuthPage() {
           </div>
 
           <h2 className="text-4xl font-bold text-slate-800 mb-4">
-            Kết nối Shop Shopee <span className="text-orange-500">dễ dàng</span>
+            Quản lý Shop <span className="text-orange-500">đa nền tảng</span>
           </h2>
-          <p className="text-lg text-slate-600 mb-8">
-            Xác thực và quản lý shop Shopee của bạn với Shopee Open Platform API.
+          <p className="text-lg text-slate-600 mb-6">
+            Kết nối và quản lý tất cả shop thương mại điện tử của bạn trong một nền tảng duy nhất.
           </p>
+
+          {/* Platform Icons */}
+          <div className="flex items-center gap-3 mb-8">
+            {PLATFORMS.map((platform, index) => (
+              <div
+                key={index}
+                className={`relative flex items-center justify-center w-12 h-12 rounded-xl ${platform.bgColor} ${platform.color} transition-transform hover:scale-110 cursor-pointer`}
+                title={platform.name}
+              >
+                <platform.icon />
+                {!platform.available && (
+                  <span className="absolute -top-1 -right-1 text-[10px] bg-slate-500 text-white px-1.5 py-0.5 rounded-full font-medium">
+                    Soon
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
 
           <div className="space-y-4">
             {FEATURES.map((feature, index) => (
@@ -181,7 +237,7 @@ export default function AuthPage() {
 
           <div className="text-center mt-6">
             <p className="text-xs text-slate-400">
-              Powered by <span className="font-medium">Shopee Open Platform API</span>
+              Hỗ trợ <span className="font-medium text-orange-500">Shopee</span> · <span className="font-medium text-blue-600">Lazada</span> · <span className="font-medium text-slate-600">TikTok</span> · <span className="font-medium text-blue-500">Facebook</span>
             </p>
           </div>
         </div>

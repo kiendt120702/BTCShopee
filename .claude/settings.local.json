@@ -42,7 +42,8 @@
       "Bash(timeout:*)",
       "Bash(ping:*)",
       "Bash(git merge:*)",
-      "Bash(supabase secrets set:*)"
+      "Bash(supabase secrets set:*)",
+      "mcp__supabase__list_extensions"
     ]
   }
 }

@@ -392,6 +392,437 @@ export async function updateProductStock(
   });
 }
 
+// ==================== CATEGORY & BRAND APIs ====================
+
+/**
+ * Lấy danh sách thương hiệu theo trang
+ */
+export async function getBrandByPages(
+  sellerId: number,
+  params: { startRow?: number; pageSize?: number } = {}
+): Promise<{
+  data: { brands: Array<{ brand_id: number; name: string; global_identifier: string }> };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'get-brands',
+    seller_id: sellerId,
+    start_row: params.startRow,
+    page_size: params.pageSize,
+  });
+}
+
+/**
+ * Lấy cây danh mục sản phẩm
+ */
+export async function getCategoryTree(
+  sellerId: number,
+  languageCode?: string
+): Promise<{
+  data: Array<{
+    category_id: number;
+    name: string;
+    leaf: boolean;
+    children?: Array<unknown>;
+  }>;
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'get-category-tree',
+    seller_id: sellerId,
+    language_code: languageCode,
+  });
+}
+
+/**
+ * Lấy thuộc tính của danh mục
+ */
+export async function getCategoryAttributes(
+  sellerId: number,
+  primaryCategoryId: number,
+  languageCode?: string
+): Promise<{
+  data: Array<{
+    name: string;
+    label: string;
+    input_type: string;
+    is_mandatory: boolean;
+    options?: Array<{ name: string; id?: number }>;
+  }>;
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'get-category-attributes',
+    seller_id: sellerId,
+    primary_category_id: primaryCategoryId,
+    language_code: languageCode,
+  });
+}
+
+/**
+ * Gợi ý danh mục theo tên sản phẩm
+ */
+export async function getCategorySuggestion(
+  sellerId: number,
+  productName: string
+): Promise<{
+  data: {
+    categorySuggestions: Array<{
+      categoryId: number;
+      categoryName: string;
+      categoryPath: string;
+    }>;
+  };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'get-category-suggestion',
+    seller_id: sellerId,
+    product_name: productName,
+  });
+}
+
+// ==================== IMAGE APIs ====================
+
+/**
+ * Upload ảnh lên Lazada server (từ base64)
+ */
+export async function uploadImage(
+  sellerId: number,
+  imageBase64: string
+): Promise<{
+  data: { image: { url: string } };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'upload-image',
+    seller_id: sellerId,
+    image_base64: imageBase64,
+  });
+}
+
+/**
+ * Migrate ảnh từ URL bên ngoài
+ */
+export async function migrateImage(
+  sellerId: number,
+  imageUrl: string
+): Promise<{
+  data: { image: { url: string } };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'migrate-image',
+    seller_id: sellerId,
+    image_url: imageUrl,
+  });
+}
+
+/**
+ * Migrate nhiều ảnh từ URLs bên ngoài (async)
+ */
+export async function migrateImages(
+  sellerId: number,
+  imageUrls: string[]
+): Promise<{
+  data: { batch_id: string };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'migrate-images',
+    seller_id: sellerId,
+    image_urls: imageUrls,
+  });
+}
+
+/**
+ * Lấy kết quả từ MigrateImages (async response)
+ */
+export async function getImageResponse(
+  sellerId: number,
+  batchId: string
+): Promise<{
+  data: {
+    images: Array<{ url: string; status: string }>;
+  };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'get-image-response',
+    seller_id: sellerId,
+    batch_id: batchId,
+  });
+}
+
+/**
+ * Set ảnh cho sản phẩm
+ */
+export async function setImages(
+  sellerId: number,
+  skuId: string,
+  images: string[]
+): Promise<{ code: string; message?: string }> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'set-images',
+    seller_id: sellerId,
+    sku_id: skuId,
+    images,
+  });
+}
+
+// ==================== PRODUCT MANAGEMENT APIs ====================
+
+/**
+ * Tạo sản phẩm mới
+ * @param payload - XML payload theo format Lazada
+ */
+export async function createProduct(
+  sellerId: number,
+  payload: string
+): Promise<{
+  data: { item_id: number; sku_list: Array<{ sku_id: number; seller_sku: string }> };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'create-product',
+    seller_id: sellerId,
+    payload,
+  });
+}
+
+/**
+ * Helper: Tạo XML payload cho CreateProduct
+ */
+export function buildCreateProductPayload(product: {
+  primaryCategory: number;
+  attributes: Record<string, string>;
+  skus: Array<{
+    sellerSku: string;
+    price: number;
+    quantity: number;
+    specialPrice?: number;
+    images?: string[];
+    colorFamily?: string;
+    size?: string;
+    packageWeight?: number;
+    packageLength?: number;
+    packageWidth?: number;
+    packageHeight?: number;
+  }>;
+}): string {
+  const attributesXml = Object.entries(product.attributes)
+    .map(([key, value]) => `<${key}><![CDATA[${value}]]></${key}>`)
+    .join('');
+
+  const skusXml = product.skus
+    .map((sku) => {
+      let skuContent = `<SellerSku>${sku.sellerSku}</SellerSku>`;
+      skuContent += `<price>${sku.price}</price>`;
+      skuContent += `<quantity>${sku.quantity}</quantity>`;
+      if (sku.specialPrice) skuContent += `<special_price>${sku.specialPrice}</special_price>`;
+      if (sku.colorFamily) skuContent += `<color_family>${sku.colorFamily}</color_family>`;
+      if (sku.size) skuContent += `<size>${sku.size}</size>`;
+      if (sku.packageWeight) skuContent += `<package_weight>${sku.packageWeight}</package_weight>`;
+      if (sku.packageLength) skuContent += `<package_length>${sku.packageLength}</package_length>`;
+      if (sku.packageWidth) skuContent += `<package_width>${sku.packageWidth}</package_width>`;
+      if (sku.packageHeight) skuContent += `<package_height>${sku.packageHeight}</package_height>`;
+      if (sku.images && sku.images.length > 0) {
+        skuContent += `<Images>${sku.images.map((img) => `<Image>${img}</Image>`).join('')}</Images>`;
+      }
+      return `<Sku>${skuContent}</Sku>`;
+    })
+    .join('');
+
+  return `<Request><Product><PrimaryCategory>${product.primaryCategory}</PrimaryCategory><Attributes>${attributesXml}</Attributes><Skus>${skusXml}</Skus></Product></Request>`;
+}
+
+/**
+ * Cập nhật sản phẩm
+ * @param payload - XML payload theo format Lazada
+ */
+export async function updateProduct(
+  sellerId: number,
+  payload: string
+): Promise<{ code: string; message?: string }> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'update-product',
+    seller_id: sellerId,
+    payload,
+  });
+}
+
+/**
+ * Helper: Tạo XML payload cho UpdateProduct
+ */
+export function buildUpdateProductPayload(product: {
+  itemId: number;
+  attributes?: Record<string, string>;
+  skus?: Array<{
+    skuId: number;
+    sellerSku?: string;
+    price?: number;
+    quantity?: number;
+    specialPrice?: number;
+    status?: string;
+  }>;
+}): string {
+  let productContent = `<ItemId>${product.itemId}</ItemId>`;
+
+  if (product.attributes) {
+    const attributesXml = Object.entries(product.attributes)
+      .map(([key, value]) => `<${key}><![CDATA[${value}]]></${key}>`)
+      .join('');
+    productContent += `<Attributes>${attributesXml}</Attributes>`;
+  }
+
+  if (product.skus && product.skus.length > 0) {
+    const skusXml = product.skus
+      .map((sku) => {
+        let skuContent = `<SkuId>${sku.skuId}</SkuId>`;
+        if (sku.sellerSku) skuContent += `<SellerSku>${sku.sellerSku}</SellerSku>`;
+        if (sku.price !== undefined) skuContent += `<price>${sku.price}</price>`;
+        if (sku.quantity !== undefined) skuContent += `<quantity>${sku.quantity}</quantity>`;
+        if (sku.specialPrice !== undefined) skuContent += `<special_price>${sku.specialPrice}</special_price>`;
+        if (sku.status) skuContent += `<Status>${sku.status}</Status>`;
+        return `<Sku>${skuContent}</Sku>`;
+      })
+      .join('');
+    productContent += `<Skus>${skusXml}</Skus>`;
+  }
+
+  return `<Request><Product>${productContent}</Product></Request>`;
+}
+
+/**
+ * Xóa sản phẩm
+ */
+export async function removeProduct(
+  sellerId: number,
+  sellerSkuList: string[]
+): Promise<{ code: string; message?: string }> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'remove-product',
+    seller_id: sellerId,
+    seller_sku_list: sellerSkuList,
+  });
+}
+
+/**
+ * Lấy trạng thái QC của sản phẩm
+ */
+export async function getQcStatus(
+  sellerId: number,
+  params: {
+    offset?: number;
+    limit?: number;
+    skuSellerList?: string[];
+  } = {}
+): Promise<{
+  data: {
+    products: Array<{
+      seller_sku: string;
+      shop_sku: string;
+      status: string;
+      reason?: string;
+    }>;
+  };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'get-qc-status',
+    seller_id: sellerId,
+    offset: params.offset,
+    limit: params.limit,
+    sku_seller_list: params.skuSellerList,
+  });
+}
+
+/**
+ * Lấy giới hạn số lượng sản phẩm của seller
+ */
+export async function getSellerItemLimit(
+  sellerId: number
+): Promise<{
+  data: {
+    item_limit: number;
+    current_item_count: number;
+    item_limit_per_day?: number;
+  };
+  code: string;
+  message?: string;
+}> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'get-seller-item-limit',
+    seller_id: sellerId,
+  });
+}
+
+// ==================== INVENTORY APIs ====================
+
+/**
+ * Điều chỉnh số lượng bán được (tăng/giảm)
+ */
+export async function adjustSellableQuantity(
+  sellerId: number,
+  skus: Array<{
+    seller_sku: string;
+    adjust_quantity: number;
+  }>
+): Promise<{ code: string; message?: string }> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'adjust-sellable-quantity',
+    seller_id: sellerId,
+    skus,
+  });
+}
+
+/**
+ * Cập nhật số lượng bán được (set giá trị tuyệt đối)
+ */
+export async function updateSellableQuantity(
+  sellerId: number,
+  skus: Array<{
+    seller_sku: string;
+    sellable_quantity: number;
+  }>
+): Promise<{ code: string; message?: string }> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'update-sellable-quantity',
+    seller_id: sellerId,
+    skus,
+  });
+}
+
+/**
+ * Cập nhật giá và số lượng (batch)
+ */
+export async function updatePriceQuantity(
+  sellerId: number,
+  skus: Array<{
+    item_id: string;
+    sku_id: string;
+    price?: number;
+    special_price?: number;
+    quantity?: number;
+  }>
+): Promise<{ code: string; message?: string }> {
+  return callEdgeFunction(LAZADA_PRODUCTS_FUNCTION, {
+    action: 'update-price-quantity',
+    seller_id: sellerId,
+    skus,
+  });
+}
+
 // ==================== DATABASE QUERIES ====================
 
 /**

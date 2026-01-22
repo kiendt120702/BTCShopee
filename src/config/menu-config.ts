@@ -19,6 +19,7 @@ import {
   Clock,
   BarChart3,
   ShoppingBag,
+  Layers,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -53,7 +54,7 @@ export const menuItems: MenuItem[] = [
   {
     title: 'Trang chủ',
     icon: Home,
-    path: '/',
+    path: '/dashboard',
     permissionKey: 'home',
     description: 'Xem tổng quan hệ thống',
   },
@@ -74,6 +75,13 @@ export const menuItems: MenuItem[] = [
     children: [
       { title: 'Danh sách sản phẩm', icon: Package, path: '/products', permissionKey: 'products' },
     ],
+  },
+  {
+    title: 'Sản phẩm sàn',
+    icon: Layers,
+    path: '/products/multi-platform',
+    permissionKey: 'products-multi',
+    description: 'Quản lý sản phẩm đa nền tảng',
   },
   {
     title: 'Đánh giá',

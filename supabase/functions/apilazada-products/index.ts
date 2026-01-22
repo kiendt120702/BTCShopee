@@ -484,6 +484,533 @@ async function updateStock(
   return await response.json();
 }
 
+// ==================== CATEGORY & BRAND APIs ====================
+
+/**
+ * Lấy danh sách thương hiệu theo trang
+ * API: GetBrandByPages
+ */
+async function getBrandByPages(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  params: {
+    startRow?: number;
+    pageSize?: number;
+  } = {}
+) {
+  const apiParams: Record<string, string> = {};
+  if (params.startRow !== undefined) apiParams.startRow = params.startRow.toString();
+  if (params.pageSize !== undefined) apiParams.pageSize = params.pageSize.toString();
+
+  return await callLazadaAPI('/brands/get', shop, apiParams);
+}
+
+/**
+ * Lấy cây danh mục sản phẩm
+ * API: GetCategoryTree
+ */
+async function getCategoryTree(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  languageCode?: string
+) {
+  const apiParams: Record<string, string> = {};
+  if (languageCode) apiParams.language_code = languageCode;
+
+  return await callLazadaAPI('/category/tree/get', shop, apiParams);
+}
+
+/**
+ * Lấy thuộc tính của danh mục
+ * API: GetCategoryAttributes
+ */
+async function getCategoryAttributes(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  primaryCategoryId: number,
+  languageCode?: string
+) {
+  const apiParams: Record<string, string> = {
+    primary_category_id: primaryCategoryId.toString(),
+  };
+  if (languageCode) apiParams.language_code = languageCode;
+
+  return await callLazadaAPI('/category/attributes/get', shop, apiParams);
+}
+
+/**
+ * Gợi ý danh mục theo tên sản phẩm
+ * API: GetCategorySuggestion
+ */
+async function getCategorySuggestion(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  productName: string
+) {
+  return await callLazadaAPI('/product/category/suggestion/get', shop, {
+    product_name: productName,
+  });
+}
+
+// ==================== IMAGE APIs ====================
+
+/**
+ * Upload ảnh lên Lazada server (từ base64)
+ * API: UploadImage
+ */
+async function uploadImage(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  imageBase64: string
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/image/upload';
+  const timestamp = Date.now().toString();
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    image: imageBase64,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+  params.sign = sign;
+
+  const response = await fetch(`${apiBaseUrl}${apiPath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+  });
+
+  return await response.json();
+}
+
+/**
+ * Migrate ảnh từ URL bên ngoài
+ * API: MigrateImage
+ */
+async function migrateImage(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  imageUrl: string
+) {
+  return await callLazadaAPI('/image/migrate', shop, { url: imageUrl });
+}
+
+/**
+ * Migrate nhiều ảnh từ URLs bên ngoài (async)
+ * API: MigrateImages
+ */
+async function migrateImages(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  imageUrls: string[]
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/images/migrate';
+  const timestamp = Date.now().toString();
+
+  const payload = JSON.stringify({ images: imageUrls.map(url => ({ url })) });
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    payload: payload,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+  params.sign = sign;
+
+  const queryString = new URLSearchParams(params).toString();
+  const url = `${apiBaseUrl}${apiPath}?${queryString}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+  });
+
+  return await response.json();
+}
+
+/**
+ * Lấy kết quả từ MigrateImages (async response)
+ * API: GetResponse
+ */
+async function getImageResponse(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  batchId: string
+) {
+  return await callLazadaAPI('/images/response/get', shop, { batch_id: batchId });
+}
+
+/**
+ * Set ảnh cho sản phẩm
+ * API: SetImages
+ */
+async function setImages(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  skuId: string,
+  images: string[]
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/images/set';
+  const timestamp = Date.now().toString();
+
+  // Build XML payload
+  const imagesXml = images.map(url => `<Image><Url>${url}</Url></Image>`).join('');
+  const payload = `<Request><Product><Skus><Sku><SkuId>${skuId}</SkuId><Images>${imagesXml}</Images></Sku></Skus></Product></Request>`;
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    payload: payload,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+
+  const url = `${apiBaseUrl}${apiPath}?app_key=${shop.app_key}&timestamp=${timestamp}&sign_method=sha256&access_token=${shop.access_token}&sign=${sign}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: payload,
+  });
+
+  return await response.json();
+}
+
+// ==================== PRODUCT MANAGEMENT APIs ====================
+
+/**
+ * Tạo sản phẩm mới
+ * API: CreateProduct
+ */
+async function createProduct(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  productPayload: string // XML payload
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/product/create';
+  const timestamp = Date.now().toString();
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    payload: productPayload,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+
+  const url = `${apiBaseUrl}${apiPath}?app_key=${shop.app_key}&timestamp=${timestamp}&sign_method=sha256&access_token=${shop.access_token}&sign=${sign}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: productPayload,
+  });
+
+  return await response.json();
+}
+
+/**
+ * Cập nhật sản phẩm
+ * API: UpdateProduct
+ */
+async function updateProduct(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  productPayload: string // XML payload
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/product/update';
+  const timestamp = Date.now().toString();
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    payload: productPayload,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+
+  const url = `${apiBaseUrl}${apiPath}?app_key=${shop.app_key}&timestamp=${timestamp}&sign_method=sha256&access_token=${shop.access_token}&sign=${sign}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: productPayload,
+  });
+
+  return await response.json();
+}
+
+/**
+ * Xóa sản phẩm
+ * API: RemoveProduct
+ */
+async function removeProduct(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  sellerSkuList: string[]
+) {
+  return await callLazadaAPI('/product/remove', shop, {
+    seller_sku_list: JSON.stringify(sellerSkuList),
+  });
+}
+
+/**
+ * Lấy trạng thái QC của sản phẩm
+ * API: GetQcStatus
+ */
+async function getQcStatus(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  params: {
+    offset?: number;
+    limit?: number;
+    sku_seller_list?: string[];
+  } = {}
+) {
+  const apiParams: Record<string, string> = {};
+  if (params.offset !== undefined) apiParams.offset = params.offset.toString();
+  if (params.limit !== undefined) apiParams.limit = params.limit.toString();
+  if (params.sku_seller_list) apiParams.sku_seller_list = JSON.stringify(params.sku_seller_list);
+
+  return await callLazadaAPI('/product/qc/status/get', shop, apiParams);
+}
+
+/**
+ * Lấy giới hạn số lượng sản phẩm của seller
+ * API: GetSellerItemLimit
+ */
+async function getSellerItemLimit(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  }
+) {
+  return await callLazadaAPI('/product/seller/limit/get', shop, {});
+}
+
+// ==================== INVENTORY APIs ====================
+
+/**
+ * Điều chỉnh số lượng bán được (tăng/giảm)
+ * API: AdjustSellableQuantity
+ */
+async function adjustSellableQuantity(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  skus: Array<{
+    seller_sku: string;
+    adjust_quantity: number; // Positive to increase, negative to decrease
+  }>
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/product/stock/sellable/adjust';
+  const timestamp = Date.now().toString();
+
+  // Build XML payload
+  const skusXml = skus.map(sku =>
+    `<Sku><SellerSku>${sku.seller_sku}</SellerSku><AdjustQuantity>${sku.adjust_quantity}</AdjustQuantity></Sku>`
+  ).join('');
+  const payload = `<Request><Product><Skus>${skusXml}</Skus></Product></Request>`;
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    payload: payload,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+
+  const url = `${apiBaseUrl}${apiPath}?app_key=${shop.app_key}&timestamp=${timestamp}&sign_method=sha256&access_token=${shop.access_token}&sign=${sign}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: payload,
+  });
+
+  return await response.json();
+}
+
+/**
+ * Cập nhật số lượng bán được (set giá trị tuyệt đối)
+ * API: UpdateSellableQuantity
+ */
+async function updateSellableQuantity(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  skus: Array<{
+    seller_sku: string;
+    sellable_quantity: number;
+  }>
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/product/stock/sellable/update';
+  const timestamp = Date.now().toString();
+
+  // Build XML payload
+  const skusXml = skus.map(sku =>
+    `<Sku><SellerSku>${sku.seller_sku}</SellerSku><SellableQuantity>${sku.sellable_quantity}</SellableQuantity></Sku>`
+  ).join('');
+  const payload = `<Request><Product><Skus>${skusXml}</Skus></Product></Request>`;
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    payload: payload,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+
+  const url = `${apiBaseUrl}${apiPath}?app_key=${shop.app_key}&timestamp=${timestamp}&sign_method=sha256&access_token=${shop.access_token}&sign=${sign}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: payload,
+  });
+
+  return await response.json();
+}
+
+/**
+ * Cập nhật giá và số lượng (batch)
+ * API: UpdatePriceQuantity
+ */
+async function updatePriceQuantity(
+  shop: {
+    app_key: string;
+    app_secret: string;
+    access_token: string;
+    region: string;
+  },
+  skus: Array<{
+    item_id: string;
+    sku_id: string;
+    price?: number;
+    special_price?: number;
+    quantity?: number;
+  }>
+) {
+  const apiBaseUrl = LAZADA_API_URLS[shop.region] || LAZADA_API_URLS.VN;
+  const apiPath = '/product/price_quantity/update';
+  const timestamp = Date.now().toString();
+
+  // Build XML payload
+  const skusXml = skus.map(sku => {
+    let skuXml = `<Sku><ItemId>${sku.item_id}</ItemId><SkuId>${sku.sku_id}</SkuId>`;
+    if (sku.price !== undefined) skuXml += `<Price>${sku.price}</Price>`;
+    if (sku.special_price !== undefined) skuXml += `<SalePrice>${sku.special_price}</SalePrice>`;
+    if (sku.quantity !== undefined) skuXml += `<Quantity>${sku.quantity}</Quantity>`;
+    skuXml += '</Sku>';
+    return skuXml;
+  }).join('');
+  const payload = `<Request><Product><Skus>${skusXml}</Skus></Product></Request>`;
+
+  const params: Record<string, string> = {
+    app_key: shop.app_key,
+    timestamp: timestamp,
+    sign_method: 'sha256',
+    access_token: shop.access_token,
+    payload: payload,
+  };
+
+  const sign = createSignature(shop.app_secret, apiPath, params);
+
+  const url = `${apiBaseUrl}${apiPath}?app_key=${shop.app_key}&timestamp=${timestamp}&sign_method=sha256&access_token=${shop.access_token}&sign=${sign}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: payload,
+  });
+
+  return await response.json();
+}
+
 // Main handler
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -595,6 +1122,161 @@ serve(async (req) => {
           body.sku_id,
           body.quantity
         );
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ==================== CATEGORY & BRAND ====================
+
+      case 'get-brands': {
+        const response = await getBrandByPages(shopCredentials, {
+          startRow: body.start_row,
+          pageSize: body.page_size,
+        });
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-category-tree': {
+        const response = await getCategoryTree(shopCredentials, body.language_code);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-category-attributes': {
+        const response = await getCategoryAttributes(
+          shopCredentials,
+          body.primary_category_id,
+          body.language_code
+        );
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-category-suggestion': {
+        const response = await getCategorySuggestion(shopCredentials, body.product_name);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ==================== IMAGES ====================
+
+      case 'upload-image': {
+        const response = await uploadImage(shopCredentials, body.image_base64);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'migrate-image': {
+        const response = await migrateImage(shopCredentials, body.image_url);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'migrate-images': {
+        const response = await migrateImages(shopCredentials, body.image_urls);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-image-response': {
+        const response = await getImageResponse(shopCredentials, body.batch_id);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'set-images': {
+        const response = await setImages(shopCredentials, body.sku_id, body.images);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ==================== PRODUCT MANAGEMENT ====================
+
+      case 'create-product': {
+        const response = await createProduct(shopCredentials, body.payload);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'update-product': {
+        const response = await updateProduct(shopCredentials, body.payload);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'remove-product': {
+        const response = await removeProduct(shopCredentials, body.seller_sku_list);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-qc-status': {
+        const response = await getQcStatus(shopCredentials, {
+          offset: body.offset,
+          limit: body.limit,
+          sku_seller_list: body.sku_seller_list,
+        });
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get-seller-item-limit': {
+        const response = await getSellerItemLimit(shopCredentials);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ==================== INVENTORY ====================
+
+      case 'adjust-sellable-quantity': {
+        const response = await adjustSellableQuantity(shopCredentials, body.skus);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'update-sellable-quantity': {
+        const response = await updateSellableQuantity(shopCredentials, body.skus);
+
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'update-price-quantity': {
+        const response = await updatePriceQuantity(shopCredentials, body.skus);
 
         return new Response(JSON.stringify(response), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

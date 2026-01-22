@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -138,7 +138,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
         )}
       >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 border-b border-slate-200 h-[73px] overflow-hidden">
+      <Link to="/dashboard" className="flex items-center gap-3 px-4 border-b border-slate-200 h-[73px] overflow-hidden hover:bg-slate-50 transition-colors cursor-pointer">
         <img
           src="/logo_betacom.png"
           alt="BETACOM"
@@ -149,9 +149,19 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
           collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
         )}>
           <h1 className="font-bold text-xl text-red-500">BETACOM</h1>
-          <p className="text-xs text-slate-500">Quản lý Shop Shopee</p>
+          <p className="text-xs text-slate-500">Quản lý Shop đa nền tảng</p>
         </div>
-      </div>
+      </Link>
+
+      {/* Demo Badge */}
+      {user?.email === 'reviewer@betacom.agency' && !collapsed && (
+        <div className="mx-3 mt-3 px-3 py-2 bg-gradient-to-r from-orange-100 to-red-100 rounded-lg border border-orange-200">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+            <span className="text-xs font-medium text-orange-700">Tài khoản Demo</span>
+          </div>
+        </div>
+      )}
 
       {/* Menu Items */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">

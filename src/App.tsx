@@ -15,6 +15,7 @@ import MainLayout from '@/components/layout/MainLayout';
 import AuthPage from '@/pages/AuthPage';
 import AuthCallback from '@/pages/AuthCallback';
 import HomePage from '@/pages/HomePage';
+import LandingPage from '@/pages/LandingPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 
 // Settings Pages
@@ -30,6 +31,7 @@ import OrderDetailPage from '@/pages/OrderDetailPage';
 
 import FlashSaleAutoSetupPage from '@/pages/FlashSaleAutoSetupPage';
 import ProductsPage from '@/pages/ProductsPage';
+import MultiPlatformProductsPage from '@/pages/MultiPlatformProductsPage';
 import OrdersPage from '@/pages/OrdersPage';
 import ReviewsPage from '@/pages/ReviewsPage';
 import ReviewsAutoReplyPage from '@/pages/ReviewsAutoReplyPage';
@@ -77,17 +79,19 @@ function App() {
             <BrowserRouter>
               <Routes>
                 {/* Public routes */}
+                <Route path="/" element={<LandingPage />} />
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/lazada/callback" element={<LazadaCallbackPage />} />
 
                 {/* Protected routes with MainLayout */}
                 <Route element={<MainLayout />}>
-                  <Route path="/" element={<HomePage />} />
+                  <Route path="/dashboard" element={<HomePage />} />
                   {/* Feature Routes */}
                   <Route path="/orders" element={<OrdersPage />} />
                   <Route path="/orders/:orderSn" element={<OrderDetailPage />} />
                   <Route path="/products" element={<ProductsPage />} />
+                  <Route path="/products/multi-platform" element={<MultiPlatformProductsPage />} />
                   <Route path="/reviews" element={<ReviewsPage />} />
                   <Route path="/reviews/auto-reply" element={<ReviewsAutoReplyPage />} />
                   <Route path="/flash-sale" element={<FlashSalePage />} />

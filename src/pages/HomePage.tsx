@@ -1,14 +1,14 @@
 /**
- * Home Page - Dashboard tổng quan cho shop đang chọn
+ * Home Page - Dashboard tổng quan đa kênh
+ * Hiển thị thống kê từ tất cả các kênh bán hàng (Shopee, Lazada)
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Store,
-  Package,
-  ShoppingCart,
   TrendingUp,
+  TrendingDown,
   Clock,
   AlertCircle,
   ArrowRight,
@@ -16,121 +16,548 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
-  Star,
-  Activity,
-  ExternalLink
+  ChevronDown,
+  ChevronRight,
+  Calendar,
+  Filter,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShopeeAuth } from '@/hooks/useShopeeAuth';
-import { supabase } from '@/lib/supabase';
+import { useLazadaAuth } from '@/contexts/LazadaAuthContext';
+import {
+  useMultiChannelStats,
+  useAllShops,
+  Platform,
+  DateRange,
+  PlatformSummary,
+  ChannelStats,
+} from '@/hooks/useMultiChannelStats';
 import { cn } from '@/lib/utils';
 import { ADMIN_EMAIL } from '@/config/menu-config';
 
-interface ShopDetail {
-  id: string;
-  shop_id: number;
-  shop_name: string;
-  shop_logo: string | null;
-  region: string;
-  expired_at: number | null;
-  access_token_expired_at: number | null;
+// Platform icons
+const ShopeeIcon = () => (
+  <img
+    src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRcS-HdfgUSCDmV_LNqOxasca8KcceWStGP_A&s"
+    alt="Shopee"
+    className="w-5 h-5 object-contain"
+  />
+);
+
+const LazadaIcon = () => (
+  <img
+    src="https://recland.s3.ap-southeast-1.amazonaws.com/company/19a57791bf92848b511de18eaebca94a.png"
+    alt="Lazada"
+    className="w-5 h-5 object-contain"
+  />
+);
+
+const DATE_RANGE_OPTIONS: { value: DateRange; label: string }[] = [
+  { value: 'today', label: 'Hôm nay' },
+  { value: 'yesterday', label: 'Hôm qua' },
+  { value: '7days', label: '7 ngày qua' },
+  { value: '30days', label: '30 ngày qua' },
+  { value: 'month', label: 'Tháng này' },
+];
+
+const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
+  { value: 'all', label: 'Tất cả kênh' },
+  { value: 'shopee', label: 'Shopee' },
+  { value: 'lazada', label: 'Lazada' },
+];
+
+// Format currency
+const formatCurrency = (value: number) => {
+  if (value >= 1e9) {
+    return `${(value / 1e9).toFixed(2)}B`;
+  }
+  if (value >= 1e6) {
+    return `${(value / 1e6).toFixed(2)}M`;
+  }
+  return new Intl.NumberFormat('vi-VN').format(Math.round(value));
+};
+
+// Change badge component
+function ChangeBadge({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-slate-400">-</span>;
+
+  const isPositive = value >= 0;
+  const Icon = isPositive ? TrendingUp : TrendingDown;
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-0.5 text-xs font-medium',
+        isPositive ? 'text-green-600' : 'text-red-600'
+      )}
+    >
+      <Icon className="w-3 h-3" />
+      {isPositive ? '+' : ''}
+      {value}%
+    </span>
+  );
+}
+
+// Platform row with expandable shops
+function PlatformRow({
+  summary,
+  expanded,
+  onToggle,
+}: {
+  summary: PlatformSummary;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const hasShops = summary.shops.length > 0;
+  const Icon = summary.channel === 'shopee' ? ShopeeIcon : LazadaIcon;
+  const channelName = summary.channel === 'shopee' ? 'Shopee' : 'Lazada';
+  const bgColor = summary.channel === 'shopee' ? 'bg-orange-50' : 'bg-blue-50';
+
+  return (
+    <>
+      <TableRow
+        className={cn('cursor-pointer hover:bg-slate-50', bgColor)}
+        onClick={onToggle}
+      >
+        <TableCell className="font-medium">
+          <div className="flex items-center gap-2">
+            {hasShops ? (
+              expanded ? (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              )
+            ) : (
+              <span className="w-4" />
+            )}
+            <Icon />
+            <span>{channelName}</span>
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">{formatCurrency(summary.revenue)}</span>
+            <ChangeBadge value={summary.revenueChange} />
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">{summary.orders}</span>
+            <ChangeBadge value={summary.ordersChange} />
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <span>{formatCurrency(summary.avgOrderValue)}</span>
+            <ChangeBadge value={summary.avgOrderValueChange} />
+          </div>
+        </TableCell>
+        <TableCell className="text-slate-400">
+          {summary.adsSpend !== null ? formatCurrency(summary.adsSpend) : '-'}
+        </TableCell>
+        <TableCell className="text-slate-400">
+          {summary.profit !== null ? formatCurrency(summary.profit) : '-'}
+        </TableCell>
+        <TableCell className="text-slate-400">
+          {summary.profitMargin !== null ? `${summary.profitMargin}%` : '-'}
+        </TableCell>
+      </TableRow>
+      {expanded &&
+        summary.shops.map((shop) => (
+          <ShopRow key={`${shop.channel}-${shop.shopId}`} shop={shop} />
+        ))}
+    </>
+  );
+}
+
+// Individual shop row
+function ShopRow({ shop }: { shop: ChannelStats }) {
+  return (
+    <TableRow className="bg-slate-50/50">
+      <TableCell className="pl-12">
+        <div className="flex items-center gap-2">
+          {shop.shopLogo ? (
+            <img
+              src={shop.shopLogo}
+              alt={shop.shopName}
+              className="w-5 h-5 rounded object-cover"
+            />
+          ) : (
+            <Store className="w-4 h-4 text-slate-400" />
+          )}
+          <span className="text-slate-600">{shop.shopName}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <span>{formatCurrency(shop.revenue)}</span>
+          <ChangeBadge value={shop.revenueChange} />
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <span>{shop.orders}</span>
+          <ChangeBadge value={shop.ordersChange} />
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <span>{formatCurrency(shop.avgOrderValue)}</span>
+          <ChangeBadge value={shop.avgOrderValueChange} />
+        </div>
+      </TableCell>
+      <TableCell className="text-slate-400">
+        {shop.adsSpend !== null ? formatCurrency(shop.adsSpend) : '-'}
+      </TableCell>
+      <TableCell className="text-slate-400">
+        {shop.profit !== null ? formatCurrency(shop.profit) : '-'}
+      </TableCell>
+      <TableCell className="text-slate-400">
+        {shop.profitMargin !== null ? `${shop.profitMargin}%` : '-'}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// Total summary row
+function TotalRow({ summary }: { summary: PlatformSummary }) {
+  return (
+    <TableRow className="bg-slate-100 font-semibold">
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <ChevronDown className="w-4 h-4 text-transparent" />
+          <span>Đơn hàng</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <span>{formatCurrency(summary.revenue)}</span>
+          <ChangeBadge value={summary.revenueChange} />
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <span>{summary.orders}</span>
+          <ChangeBadge value={summary.ordersChange} />
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <span>{formatCurrency(summary.avgOrderValue)}</span>
+          <ChangeBadge value={summary.avgOrderValueChange} />
+        </div>
+      </TableCell>
+      <TableCell className="text-slate-500">
+        {summary.adsSpend !== null ? formatCurrency(summary.adsSpend) : '-'}
+      </TableCell>
+      <TableCell className="text-slate-500">
+        {summary.profit !== null ? formatCurrency(summary.profit) : '-'}
+      </TableCell>
+      <TableCell className="text-slate-500">
+        {summary.profitMargin !== null ? `${summary.profitMargin}%` : '-'}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// Main overview component
+function MultiChannelOverview() {
+  const [platform, setPlatform] = useState<Platform>('all');
+  const [shopId, setShopId] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<DateRange>('today');
+  const [expandedPlatforms, setExpandedPlatforms] = useState<Set<string>>(
+    new Set(['shopee', 'lazada'])
+  );
+
+  const allShops = useAllShops();
+  const { data, isLoading, refetch } = useMultiChannelStats({
+    platform,
+    shopId: shopId === 'all' ? undefined : shopId,
+    dateRange,
+  });
+
+  const togglePlatform = (channel: string) => {
+    setExpandedPlatforms((prev) => {
+      const next = new Set(prev);
+      if (next.has(channel)) {
+        next.delete(channel);
+      } else {
+        next.add(channel);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <CardTitle className="text-lg font-semibold">Tổng quan</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
+              <SelectTrigger className="w-[140px]">
+                <Filter className="w-4 h-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PLATFORM_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={shopId} onValueChange={setShopId}>
+              <SelectTrigger className="w-[180px]">
+                <Store className="w-4 h-4 mr-2" />
+                <SelectValue placeholder="Tất cả cửa hàng" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả cửa hàng</SelectItem>
+                {allShops.map((shop) => (
+                  <SelectItem key={shop.id} value={shop.id}>
+                    <div className="flex items-center gap-2">
+                      {shop.channel === 'shopee' ? (
+                        <span className="text-orange-500 text-xs">[S]</span>
+                      ) : (
+                        <span className="text-blue-500 text-xs">[L]</span>
+                      )}
+                      <span className="truncate max-w-[120px]">{shop.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
+              <SelectTrigger className="w-[140px]">
+                <Calendar className="w-4 h-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DATE_RANGE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button variant="outline" size="icon" onClick={() => refetch()}>
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Spinner className="w-8 h-8" />
+          </div>
+        ) : !data || (data.shopee.shops.length === 0 && data.lazada.shops.length === 0) ? (
+          <div className="text-center py-12 text-slate-500">
+            <Store className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>Chưa có shop nào được kết nối</p>
+            <div className="flex justify-center gap-2 mt-4">
+              <Link to="/settings/shops">
+                <Button variant="outline" size="sm">
+                  <ShopeeIcon />
+                  <span className="ml-2">Kết nối Shopee</span>
+                </Button>
+              </Link>
+              <Link to="/lazada/shops">
+                <Button variant="outline" size="sm">
+                  <LazadaIcon />
+                  <span className="ml-2">Kết nối Lazada</span>
+                </Button>
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[200px]">Kênh bán</TableHead>
+                  <TableHead>Doanh thu</TableHead>
+                  <TableHead>Số đơn</TableHead>
+                  <TableHead>GTTB</TableHead>
+                  <TableHead>Ads</TableHead>
+                  <TableHead>Lợi nhuận</TableHead>
+                  <TableHead>%DT</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {/* Total row */}
+                <TotalRow summary={data.total} />
+
+                {/* Shopee section */}
+                {(platform === 'all' || platform === 'shopee') &&
+                  data.shopee.shops.length > 0 && (
+                    <PlatformRow
+                      summary={data.shopee}
+                      expanded={expandedPlatforms.has('shopee')}
+                      onToggle={() => togglePlatform('shopee')}
+                    />
+                  )}
+
+                {/* Lazada section */}
+                {(platform === 'all' || platform === 'lazada') &&
+                  data.lazada.shops.length > 0 && (
+                    <PlatformRow
+                      summary={data.lazada}
+                      expanded={expandedPlatforms.has('lazada')}
+                      onToggle={() => togglePlatform('lazada')}
+                    />
+                  )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Token status alert for admin
+function TokenAlerts() {
+  const { user, profile } = useAuth();
+  const { shops: shopeeShops } = useShopeeAuth();
+  const { shops: lazadaShops } = useLazadaAuth();
+
+  const isAdmin =
+    user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() ||
+    profile?.system_role === 'admin';
+
+  if (!isAdmin) return null;
+
+  // Check for expiring tokens
+  const now = Date.now();
+  const expiringShops: { name: string; channel: string; daysLeft: number }[] = [];
+
+  // TODO: Add token expiry check for Shopee shops
+  // For now, Lazada shops have explicit token expiry
+  lazadaShops.forEach((shop) => {
+    if (shop.access_token_expires_at) {
+      const expiry = new Date(shop.access_token_expires_at).getTime();
+      const daysLeft = Math.floor((expiry - now) / (24 * 60 * 60 * 1000));
+      if (daysLeft <= 7) {
+        expiringShops.push({
+          name: shop.shop_name || `Seller ${shop.seller_id}`,
+          channel: 'Lazada',
+          daysLeft,
+        });
+      }
+    }
+  });
+
+  if (expiringShops.length === 0) return null;
+
+  const hasExpired = expiringShops.some((s) => s.daysLeft <= 0);
+  const hasCritical = expiringShops.some((s) => s.daysLeft > 0 && s.daysLeft <= 3);
+
+  return (
+    <Card
+      className={cn(
+        'border',
+        hasExpired || hasCritical
+          ? 'border-red-200 bg-gradient-to-br from-red-50 to-rose-50'
+          : 'border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50'
+      )}
+    >
+      <CardContent className="pt-4 pb-4">
+        <div className="flex gap-3">
+          <div
+            className={cn(
+              'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
+              hasExpired || hasCritical ? 'bg-red-100' : 'bg-amber-100'
+            )}
+          >
+            {hasExpired ? (
+              <XCircle className="w-5 h-5 text-red-600" />
+            ) : hasCritical ? (
+              <AlertCircle className="w-5 h-5 text-red-600" />
+            ) : (
+              <Clock className="w-5 h-5 text-amber-600" />
+            )}
+          </div>
+          <div className="flex-1">
+            <p
+              className={cn(
+                'font-semibold',
+                hasExpired || hasCritical ? 'text-red-800' : 'text-amber-800'
+              )}
+            >
+              {hasExpired ? 'Token đã hết hạn' : 'Cảnh báo Token'}
+            </p>
+            <div className="text-sm mt-1 space-y-1">
+              {expiringShops.map((shop, i) => (
+                <p
+                  key={i}
+                  className={cn(
+                    shop.daysLeft <= 0
+                      ? 'text-red-700'
+                      : shop.daysLeft <= 3
+                        ? 'text-red-600'
+                        : 'text-amber-700'
+                  )}
+                >
+                  [{shop.channel}] {shop.name}:{' '}
+                  {shop.daysLeft <= 0
+                    ? 'Đã hết hạn'
+                    : `Còn ${shop.daysLeft} ngày`}
+                </p>
+              ))}
+            </div>
+            <Link to="/lazada/shops">
+              <Button
+                size="sm"
+                className={cn(
+                  'mt-3 text-white',
+                  hasExpired || hasCritical
+                    ? 'bg-red-500 hover:bg-red-600'
+                    : 'bg-amber-500 hover:bg-amber-600'
+                )}
+              >
+                <RefreshCw className="w-4 h-4 mr-1.5" />
+                Gia hạn ngay
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function HomePage() {
-  const { user, profile } = useAuth();
-  const { shops, selectedShopId, isLoading: isShopLoading } = useShopeeAuth();
-  const [shopDetail, setShopDetail] = useState<ShopDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+  const { shops: shopeeShops, isLoading: isShopeeLoading } = useShopeeAuth();
+  const { shops: lazadaShops, isLoading: isLazadaLoading } = useLazadaAuth();
 
-  // Kiểm tra admin
-  const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() || profile?.system_role === 'admin';
+  const isLoading = isShopeeLoading || isLazadaLoading;
+  const hasShops = shopeeShops.length > 0 || lazadaShops.length > 0;
 
-  // Tìm shop đang được chọn từ context
-  const currentShop = shops.find((shop) => shop.shop_id === selectedShopId);
-
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    if (user?.id && selectedShopId) {
-      loadShopDetail(abortController.signal);
-    } else if (!isShopLoading) {
-      setIsLoading(false);
-    }
-
-    return () => {
-      abortController.abort();
-    };
-  }, [user?.id, selectedShopId, isShopLoading]);
-
-  const loadShopDetail = async (signal?: AbortSignal) => {
-    if (!user || !selectedShopId) return;
-
-    setIsLoading(true);
-    try {
-      if (signal?.aborted) return;
-
-      const { data, error } = await supabase
-        .from('apishopee_shops')
-        .select('id, shop_id, shop_name, shop_logo, region, expired_at, access_token_expired_at')
-        .eq('shop_id', selectedShopId)
-        .single();
-
-      if (signal?.aborted) return;
-
-      if (error) {
-        if (error.message?.includes('abort')) return;
-        console.error('Error loading shop detail:', error);
-      } else if (data) {
-        setShopDetail(data);
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      if (signal?.aborted) return;
-      console.error('Error loading shop detail:', err);
-    } finally {
-      if (!signal?.aborted) {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  // Helper: chuẩn hóa timestamp về milliseconds
-  const normalizeTimestamp = (ts: number | null): number | null => {
-    if (!ts) return null;
-    return ts < 1e12 ? ts * 1000 : ts;
-  };
-
-  const getTokenStatus = () => {
-    if (!shopDetail) return null;
-
-    const now = Date.now();
-    const rawExpiry = shopDetail.access_token_expired_at || shopDetail.expired_at;
-    const expiry = normalizeTimestamp(rawExpiry);
-
-    if (!expiry) return { status: 'unknown', label: 'Chưa xác thực', color: 'bg-slate-100 text-slate-600', icon: AlertCircle };
-
-    const diffMs = expiry - now;
-    const hoursLeft = Math.floor(diffMs / (60 * 60 * 1000));
-    const daysLeft = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-
-    if (diffMs <= 0) {
-      return { status: 'expired', label: 'Token hết hạn', color: 'bg-red-100 text-red-700', icon: XCircle };
-    } else if (daysLeft < 1) {
-      return { status: 'critical', label: `Còn ${hoursLeft} giờ`, color: 'bg-red-100 text-red-700', icon: Clock };
-    } else if (daysLeft <= 3) {
-      return { status: 'critical', label: `Còn ${daysLeft} ngày`, color: 'bg-red-100 text-red-700', icon: Clock };
-    } else if (daysLeft <= 7) {
-      return { status: 'warning', label: `Còn ${daysLeft} ngày`, color: 'bg-amber-100 text-amber-700', icon: Clock };
-    } else {
-      return { status: 'active', label: `Còn ${daysLeft} ngày`, color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 };
-    }
-  };
-
-  if (isLoading || isShopLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Spinner className="w-8 h-8" />
@@ -142,113 +569,37 @@ export default function HomePage() {
     return <LandingContent />;
   }
 
-  // Nếu chưa có shop nào
-  if (shops.length === 0) {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="py-16">
-            <div className="text-center">
-              <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-6">
-                <Store className="w-10 h-10 text-slate-400" />
-              </div>
-              <h2 className="text-xl font-semibold text-slate-800 mb-2">Chưa có shop nào</h2>
-              <p className="text-slate-500 mb-6 max-w-md mx-auto">
-                Kết nối shop Shopee của bạn để bắt đầu quản lý đơn hàng, sản phẩm và nhiều hơn nữa
-              </p>
-              <Link to="/settings/shops">
-                <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
-                  <Store className="w-4 h-4 mr-2" />
-                  Kết nối Shop Shopee
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const tokenStatus = getTokenStatus();
-
   return (
     <div className="p-4 md:p-6 space-y-6">
-      {/* Current Shop Info Card */}
-      <Card className="overflow-hidden">
-        <div className="bg-gradient-to-r from-orange-500 to-red-500 px-4 md:px-6 py-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-lg flex-shrink-0">
-              {currentShop?.shop_logo || shopDetail?.shop_logo ? (
-                <img
-                  src={currentShop?.shop_logo || shopDetail?.shop_logo || ''}
-                  alt={currentShop?.shop_name || shopDetail?.shop_name || 'Shop'}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <Store className="w-7 h-7 md:w-8 md:h-8 text-orange-500" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0 text-white">
-              <h1 className="text-lg md:text-xl font-bold truncate">
-                {currentShop?.shop_name || shopDetail?.shop_name || `Shop ${selectedShopId}`}
-              </h1>
-              <p className="text-orange-100 text-sm">
-                ID: {selectedShopId} • {currentShop?.region || shopDetail?.region || 'VN'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </Card>
+      {/* Token Alerts for Admin */}
+      <TokenAlerts />
 
-      {/* Token Alerts - Chỉ hiển thị cho Admin */}
-      {isAdmin && tokenStatus && (tokenStatus.status === 'expired' || tokenStatus.status === 'critical' || tokenStatus.status === 'warning') && (
-        <Card className={cn(
-          "border",
-          tokenStatus.status === 'expired' ? "border-red-200 bg-gradient-to-br from-red-50 to-rose-50" :
-          tokenStatus.status === 'critical' ? "border-red-200 bg-gradient-to-br from-red-50 to-rose-50" :
-          "border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50"
-        )}>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex gap-3">
-              <div className={cn(
-                "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
-                tokenStatus.status === 'warning' ? "bg-amber-100" : "bg-red-100"
-              )}>
-                {tokenStatus.status === 'expired' ? (
-                  <XCircle className="w-5 h-5 text-red-600" />
-                ) : tokenStatus.status === 'critical' ? (
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                ) : (
-                  <Clock className="w-5 h-5 text-amber-600" />
-                )}
-              </div>
-              <div className="flex-1">
-                <p className={cn(
-                  "font-semibold",
-                  tokenStatus.status === 'warning' ? "text-amber-800" : "text-red-800"
-                )}>
-                  {tokenStatus.status === 'expired' ? 'Token đã hết hạn' :
-                   tokenStatus.status === 'critical' ? 'Token sắp hết hạn' : 'Cảnh báo Token'}
-                </p>
-                <p className={cn(
-                  "text-sm mt-1",
-                  tokenStatus.status === 'warning' ? "text-amber-700" : "text-red-700"
-                )}>
-                  {tokenStatus.status === 'expired'
-                    ? 'Vui lòng kết nối lại shop để tiếp tục sử dụng'
-                    : `Token sẽ hết hạn trong ${tokenStatus.label.replace('Còn ', '')}. Hãy gia hạn ngay!`
-                  }
-                </p>
+      {/* Multi-Channel Overview */}
+      <MultiChannelOverview />
+
+      {/* Quick Actions when no shops */}
+      {!hasShops && (
+        <Card>
+          <CardContent className="py-8">
+            <div className="text-center">
+              <Store className="w-12 h-12 mx-auto mb-4 text-slate-400" />
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">
+                Bắt đầu kết nối shop của bạn
+              </h3>
+              <p className="text-slate-500 mb-6">
+                Kết nối shop để bắt đầu quản lý đơn hàng, sản phẩm và xem thống kê
+              </p>
+              <div className="flex justify-center gap-3">
                 <Link to="/settings/shops">
-                  <Button
-                    size="sm"
-                    className={cn(
-                      "mt-3 text-white",
-                      tokenStatus.status === 'warning' ? "bg-amber-500 hover:bg-amber-600" : "bg-red-500 hover:bg-red-600"
-                    )}
-                  >
-                    <RefreshCw className="w-4 h-4 mr-1.5" />
-                    {tokenStatus.status === 'expired' ? 'Kết nối lại' : 'Gia hạn ngay'}
+                  <Button className="bg-orange-500 hover:bg-orange-600">
+                    <ShopeeIcon />
+                    <span className="ml-2">Kết nối Shopee</span>
+                  </Button>
+                </Link>
+                <Link to="/lazada/shops">
+                  <Button className="bg-blue-600 hover:bg-blue-700">
+                    <LazadaIcon />
+                    <span className="ml-2">Kết nối Lazada</span>
                   </Button>
                 </Link>
               </div>
@@ -256,61 +607,7 @@ export default function HomePage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Activity className="w-5 h-5 text-blue-500" />
-            Truy cập nhanh
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-            <QuickActionButton icon={Package} label="Quản lý sản phẩm" href="/products" color="blue" />
-            <QuickActionButton icon={ShoppingCart} label="Quản lý đơn hàng" href="/orders" color="emerald" />
-            <QuickActionButton icon={Star} label="Đánh giá" href="/reviews" color="amber" />
-            <QuickActionButton icon={Zap} label="Flash Sale" href="/flash-sale" color="orange" />
-            <QuickActionButton icon={Store} label="Quản lý Shop" href="/settings/shops" color="purple" />
-            <QuickActionButton icon={TrendingUp} label="Quảng cáo" href="/ads" color="pink" />
-          </div>
-        </CardContent>
-      </Card>
     </div>
-  );
-}
-
-// Quick Action Button
-function QuickActionButton({
-  icon: Icon,
-  label,
-  href,
-  color
-}: {
-  icon: React.ElementType;
-  label: string;
-  href: string;
-  color: 'blue' | 'emerald' | 'amber' | 'orange' | 'purple' | 'pink';
-}) {
-  const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600 group-hover:bg-blue-100',
-    emerald: 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100',
-    amber: 'bg-amber-50 text-amber-600 group-hover:bg-amber-100',
-    orange: 'bg-orange-50 text-orange-600 group-hover:bg-orange-100',
-    purple: 'bg-purple-50 text-purple-600 group-hover:bg-purple-100',
-    pink: 'bg-pink-50 text-pink-600 group-hover:bg-pink-100',
-  };
-
-  return (
-    <Link to={href}>
-      <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors group">
-        <div className={cn("p-2 rounded-lg transition-colors", colorClasses[color])}>
-          <Icon className="w-4 h-4" />
-        </div>
-        <span className="font-medium text-slate-700 group-hover:text-slate-900 flex-1">{label}</span>
-        <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all" />
-      </div>
-    </Link>
   );
 }
 
@@ -318,8 +615,8 @@ function QuickActionButton({
 function LandingContent() {
   const features = [
     {
-      title: 'Quản lý đa Shop',
-      description: 'Kết nối và quản lý nhiều shop Shopee cùng lúc',
+      title: 'Quản lý đa kênh',
+      description: 'Kết nối và quản lý Shopee, Lazada trong một nền tảng',
       icon: Store,
       color: 'from-orange-500 to-red-500',
     },
@@ -352,7 +649,7 @@ function LandingContent() {
           </span>
         </h1>
         <p className="text-lg text-slate-600 max-w-xl mx-auto">
-          Nền tảng quản lý Shop Shopee chuyên nghiệp, giúp bạn tối ưu hóa kinh doanh
+          Nền tảng quản lý đa kênh thương mại điện tử chuyên nghiệp
         </p>
       </div>
 
@@ -362,10 +659,14 @@ function LandingContent() {
           return (
             <Card key={feature.title} className="text-center hover:shadow-lg transition-shadow">
               <CardContent className="pt-8 pb-6">
-                <div className={`inline-flex p-4 rounded-2xl bg-gradient-to-br ${feature.color} mb-4`}>
+                <div
+                  className={`inline-flex p-4 rounded-2xl bg-gradient-to-br ${feature.color} mb-4`}
+                >
                   <Icon className="w-8 h-8 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold text-slate-800 mb-2">{feature.title}</h3>
+                <h3 className="text-lg font-semibold text-slate-800 mb-2">
+                  {feature.title}
+                </h3>
                 <p className="text-slate-600">{feature.description}</p>
               </CardContent>
             </Card>
@@ -375,7 +676,10 @@ function LandingContent() {
 
       <div className="text-center">
         <Link to="/auth">
-          <Button size="lg" className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8">
+          <Button
+            size="lg"
+            className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white px-8"
+          >
             Đăng nhập để bắt đầu
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>

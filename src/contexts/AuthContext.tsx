@@ -265,12 +265,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
+      // Clear state first để UI update ngay
       setUser(null);
       setSession(null);
       setProfile(null);
       setError(null);
+
+      // Sign out from Supabase (scope: 'local' để chỉ logout device này)
+      await supabase.auth.signOut({ scope: 'local' });
+
+      // Fallback: Xóa trực tiếp localStorage key nếu Supabase không xóa hết
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('betacom-auth-token');
+      }
     } catch (err) {
+      // Vẫn clear state ngay cả khi có lỗi
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+
+      // Fallback clear
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('betacom-auth-token');
+      }
+
       const message = err instanceof Error ? err.message : 'Đăng xuất thất bại';
       setError(message);
     }
