@@ -12,6 +12,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
+import { logActivity, getShopInfo, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -583,6 +584,9 @@ serve(async (req) => {
     switch (action) {
       case 'process': {
         // Process auto-reply for a shop
+        const startTime = Date.now();
+        const shopInfo = await getShopInfo(supabase, shop_id);
+
         await updateJobStatus(supabase, shop_id, {
           is_running: true,
           last_run_at: new Date().toISOString(),
@@ -592,6 +596,8 @@ serve(async (req) => {
         const token = await getTokenWithAutoRefresh(supabase, shop_id);
 
         const processResult = await processAutoReply(supabase, credentials, shop_id, token);
+
+        const durationMs = Date.now() - startTime;
 
         // Update job status
         const { data: currentStatus } = await supabase
@@ -613,6 +619,30 @@ serve(async (req) => {
           error_count: processResult.error ? (currentStatus?.consecutive_errors || 0) + 1 : undefined,
           consecutive_errors: consecutiveErrors,
         });
+
+        // Log vào system_activity_logs
+        if (processResult.replied > 0 || processResult.failed > 0) {
+          await logActivity(supabase, {
+            shopId: shop_id,
+            shopName: shopInfo.shopName || undefined,
+            actionType: 'auto_reply_batch',
+            actionCategory: 'reviews' as ActionCategory,
+            actionDescription: `Trả lời tự động ${processResult.replied} đánh giá${processResult.failed > 0 ? `, ${processResult.failed} thất bại` : ''}`,
+            targetType: 'reviews',
+            requestData: {
+              batch_size: processResult.replied + processResult.failed + processResult.skipped,
+            },
+            responseData: {
+              replied: processResult.replied,
+              failed: processResult.failed,
+              skipped: processResult.skipped,
+            },
+            status: (processResult.success ? 'success' : 'failed') as ActionStatus,
+            errorMessage: processResult.error,
+            source: 'scheduled' as ActionSource,
+            durationMs,
+          });
+        }
 
         result = {
           success: processResult.success,

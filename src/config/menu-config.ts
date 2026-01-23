@@ -18,6 +18,7 @@ import {
   Megaphone,
   Clock,
   BarChart3,
+  FileText,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -139,6 +140,13 @@ export const menuItems: MenuItem[] = [
         icon: Users,
         path: '/settings/users',
         permissionKey: 'settings/users',
+        adminOnly: true
+      },
+      {
+        title: 'Quản lý nâng cao',
+        icon: FileText,
+        path: '/settings/advanced',
+        permissionKey: 'settings/advanced',
         adminOnly: true
       },
     ],

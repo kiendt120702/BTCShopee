@@ -1,7 +1,7 @@
 /**
  * Supabase Edge Function: Shopee Ads Budget Scheduler
  * Tự động điều chỉnh ngân sách quảng cáo theo lịch
- * 
+ *
  * Actions:
  * - create: Tạo cấu hình lịch ngân sách mới
  * - update: Cập nhật cấu hình
@@ -14,6 +14,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logActivity, getShopInfo, type ActionCategory, type ActionStatus, type ActionSource } from '../_shared/activity-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -369,6 +370,9 @@ serve(async (req) => {
         const results: Array<{schedule_id: string; campaign_id: number; budget: number; success: boolean; error?: string}> = [];
 
         for (const schedule of applicableSchedules) {
+          const startTime = Date.now();
+          const shopInfo = await getShopInfo(supabase, schedule.shop_id);
+
           const result = await editCampaignBudget(
             supabase,
             schedule.shop_id,
@@ -377,7 +381,9 @@ serve(async (req) => {
             schedule.budget
           );
 
-          // Log kết quả
+          const durationMs = Date.now() - startTime;
+
+          // Log kết quả vào bảng cũ (backward compatible)
           await supabase.from('apishopee_ads_budget_logs').insert({
             shop_id: schedule.shop_id,
             campaign_id: schedule.campaign_id,
@@ -386,6 +392,31 @@ serve(async (req) => {
             new_budget: schedule.budget,
             status: result.success ? 'success' : 'failed',
             error_message: result.error || null,
+          });
+
+          // Log vào system_activity_logs
+          await logActivity(supabase, {
+            shopId: schedule.shop_id,
+            shopName: shopInfo.shopName || undefined,
+            actionType: 'ads_budget_update',
+            actionCategory: 'ads' as ActionCategory,
+            actionDescription: `Cập nhật ngân sách chiến dịch "${schedule.campaign_name || schedule.campaign_id}" thành ${schedule.budget.toLocaleString()}đ`,
+            targetType: 'campaign',
+            targetId: schedule.campaign_id.toString(),
+            targetName: schedule.campaign_name || `Campaign ${schedule.campaign_id}`,
+            requestData: {
+              schedule_id: schedule.id,
+              ad_type: schedule.ad_type,
+              old_budget: schedule.old_budget,
+              new_budget: schedule.budget,
+              hour_start: schedule.hour_start,
+              hour_end: schedule.hour_end,
+            },
+            responseData: result.success ? { success: true } : undefined,
+            status: (result.success ? 'success' : 'failed') as ActionStatus,
+            errorMessage: result.error,
+            source: 'scheduled' as ActionSource,
+            durationMs,
           });
 
           results.push({
@@ -436,6 +467,9 @@ serve(async (req) => {
           );
         }
 
+        const startTime = Date.now();
+        const shopInfo = await getShopInfo(supabase, shop_id);
+
         const result = await editCampaignBudget(
           supabase,
           shop_id,
@@ -444,7 +478,9 @@ serve(async (req) => {
           schedule.budget
         );
 
-        // Log kết quả
+        const durationMs = Date.now() - startTime;
+
+        // Log kết quả vào bảng cũ
         await supabase.from('apishopee_ads_budget_logs').insert({
           shop_id,
           campaign_id: schedule.campaign_id,
@@ -453,6 +489,28 @@ serve(async (req) => {
           new_budget: schedule.budget,
           status: result.success ? 'success' : 'failed',
           error_message: result.error || null,
+        });
+
+        // Log vào system_activity_logs (manual run)
+        await logActivity(supabase, {
+          shopId: shop_id,
+          shopName: shopInfo.shopName || undefined,
+          actionType: 'ads_budget_update',
+          actionCategory: 'ads' as ActionCategory,
+          actionDescription: `[Manual] Cập nhật ngân sách chiến dịch "${schedule.campaign_name || schedule.campaign_id}" thành ${schedule.budget.toLocaleString()}đ`,
+          targetType: 'campaign',
+          targetId: schedule.campaign_id.toString(),
+          targetName: schedule.campaign_name || `Campaign ${schedule.campaign_id}`,
+          requestData: {
+            schedule_id: schedule.id,
+            ad_type: schedule.ad_type,
+            new_budget: schedule.budget,
+            trigger: 'run-now',
+          },
+          status: (result.success ? 'success' : 'failed') as ActionStatus,
+          errorMessage: result.error,
+          source: 'manual' as ActionSource,
+          durationMs,
         });
 
         return new Response(

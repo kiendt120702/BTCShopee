@@ -80,6 +80,30 @@ function formatDateTime(timestamp: number): string {
   });
 }
 
+// Format relative time (e.g., "5 phút trước", "2 giờ trước")
+function formatRelativeTime(dateString: string | null | undefined): string {
+  if (!dateString) return 'Chưa đồng bộ';
+
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Vừa xong';
+  if (diffMins < 60) return `${diffMins} phút trước`;
+  if (diffHours < 24) return `${diffHours} giờ trước`;
+  if (diffDays < 7) return `${diffDays} ngày trước`;
+
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -148,18 +172,19 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
     refetchOnReconnect: false,
   });
 
-  // Fetch sync status (for cache invalidation)
-  useQuery({
+  // Fetch sync status (for cache invalidation and display last sync time)
+  const { data: syncStatus } = useQuery({
     queryKey: syncStatusQueryKey,
     queryFn: async () => {
       const { data } = await supabase
         .from('apishopee_sync_status')
         .select('products_synced_at')
         .eq('shop_id', shopId)
+        .eq('user_id', userId)
         .maybeSingle();
       return data;
     },
-    enabled: !!shopId,
+    enabled: !!shopId && !!userId,
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
@@ -372,10 +397,10 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
               />
             </div>
 
-            {/* Auto-sync indicator - hide on mobile */}
-            <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400">
+            {/* Last sync time indicator - hide on mobile */}
+            <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400" title={syncStatus?.products_synced_at ? `Sync lúc: ${new Date(syncStatus.products_synced_at).toLocaleString('vi-VN')}` : 'Chưa đồng bộ'}>
               <Database className="h-3.5 w-3.5" />
-              <span>Tự động mỗi 1h</span>
+              <span>Sync: {formatRelativeTime(syncStatus?.products_synced_at)}</span>
             </div>
 
             {/* Sync Button */}
@@ -760,6 +785,10 @@ export function ProductsPanel({ shopId, userId }: ProductsPanelProps) {
                 ) : (
                   `0/${products.length} sản phẩm`
                 )}
+              </span>
+              {/* Last sync time on mobile */}
+              <span className="lg:hidden ml-2 text-slate-400" title={syncStatus?.products_synced_at ? new Date(syncStatus.products_synced_at).toLocaleString('vi-VN') : undefined}>
+                • Sync: {formatRelativeTime(syncStatus?.products_synced_at)}
               </span>
             </div>
 

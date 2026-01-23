@@ -20,6 +20,7 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import ProfileSettingsPage from '@/pages/settings/ProfileSettingsPage';
 import ShopsSettingsPage from '@/pages/settings/ShopsSettingsPage';
 import UsersSettingsPage from '@/pages/settings/UsersSettingsPage';
+import AdvancedSettingsPage from '@/pages/settings/AdvancedSettingsPage';
 
 // Feature Pages
 import FlashSalePage from '@/pages/FlashSalePage';
@@ -98,6 +99,7 @@ function App() {
                   <Route path="/settings/profile" element={<ProfileSettingsPage />} />
                   <Route path="/settings/shops" element={<ShopsSettingsPage />} />
                   <Route path="/settings/users" element={<UsersSettingsPage />} />
+                  <Route path="/settings/advanced" element={<AdvancedSettingsPage />} />
                 </Route>
 
                 {/* 404 */}

@@ -40,10 +40,11 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 // Constants
 const PAGE_SIZE = 100; // Max per Shopee API
-const CHUNK_SIZE_DAYS = 15; // Giới hạn cứng của Shopee: 15 ngày
+const CHUNK_SIZE_DAYS = 7; // Giảm từ 15 xuống 7 ngày để tránh timeout
 const CHUNK_SIZE_SECONDS = CHUNK_SIZE_DAYS * 24 * 60 * 60;
 const PERIODIC_DAYS = 7; // Kiểm tra 7 ngày gần nhất cho periodic sync
-// KHÔNG giới hạn số đơn - dùng pagination để lấy TẤT CẢ đơn hàng
+const MAX_ORDERS_PER_CHUNK = 500; // Giới hạn tối đa đơn hàng mỗi chunk để tránh timeout
+const MAX_EXECUTION_TIME_MS = 45000; // 45 giây - dừng sớm trước khi timeout (60s)
 
 // Time range field - BẮT BUỘC dùng create_time theo yêu cầu Shopee
 const TIME_RANGE_FIELD = 'create_time'; // KHÔNG dùng update_time
@@ -887,7 +888,8 @@ function getCurrentMonth(): string {
 
 /**
  * Sync orders for a specific chunk within a month
- * Returns quickly (< 30s) to avoid timeout
+ * Returns quickly (< 45s) to avoid timeout
+ * CHỈ fetch đơn hàng MỚI hoặc có thay đổi (so sánh update_time)
  */
 async function syncMonthChunk(
   supabase: ReturnType<typeof createClient>,
@@ -897,6 +899,7 @@ async function syncMonthChunk(
   monthStr: string,
   chunkEnd?: number
 ): Promise<ChunkSyncResult> {
+  const startTime = Date.now();
   console.log(`[ORDERS-SYNC] Syncing month ${monthStr} for shop ${shopId}`);
 
   const { start: monthStart, end: monthEnd } = getMonthBoundaries(monthStr);
@@ -916,14 +919,31 @@ async function syncMonthChunk(
       last_error: null,
     });
 
-    // Fetch ALL orders in this chunk using pagination (while response.more == true)
+    // Fetch orders in this chunk using pagination
     let cursor = '';
     let more = true;
     const allOrders: ShopeeOrder[] = [];
     let pageCount = 0;
+    let stoppedEarly = false;
+    let skippedCount = 0; // Đơn đã có trong DB và không thay đổi
 
-    // Pagination loop - lấy TẤT CẢ đơn hàng, không giới hạn số lượng
+    // Pagination loop - với giới hạn số đơn và thời gian
     while (more) {
+      // Kiểm tra timeout - dừng sớm nếu gần đến giới hạn
+      const elapsed = Date.now() - startTime;
+      if (elapsed > MAX_EXECUTION_TIME_MS) {
+        console.log(`[ORDERS-SYNC] Approaching timeout (${elapsed}ms), stopping early with ${allOrders.length} orders`);
+        stoppedEarly = true;
+        break;
+      }
+
+      // Kiểm tra số đơn đã lấy
+      if (allOrders.length >= MAX_ORDERS_PER_CHUNK) {
+        console.log(`[ORDERS-SYNC] Reached max orders limit (${MAX_ORDERS_PER_CHUNK}), stopping early`);
+        stoppedEarly = true;
+        break;
+      }
+
       pageCount++;
       const { orders: orderList, more: hasMore, nextCursor } = await fetchOrderList(
         supabase, credentials, shopId, token, currentChunkStart, currentChunkEnd, cursor,
@@ -934,18 +954,56 @@ async function syncMonthChunk(
 
       if (orderList.length === 0) break;
 
-      // Fetch order details in batches of 50
-      for (let i = 0; i < orderList.length; i += 50) {
-        const batch = orderList.slice(i, Math.min(i + 50, orderList.length));
-        const sns = batch.map(o => o.order_sn);
-        const details = await fetchOrderDetails(supabase, credentials, shopId, token, sns);
-        allOrders.push(...details);
+      // LẤY DANH SÁCH ĐƠN ĐÃ CÓ TRONG DB để so sánh
+      const orderSns = orderList.map(o => o.order_sn);
+      const { data: existingOrders } = await supabase
+        .from('apishopee_orders')
+        .select('order_sn, update_time, order_status')
+        .eq('shop_id', shopId)
+        .in('order_sn', orderSns);
 
-        // Rate limiting between detail batches
-        if (i + 50 < orderList.length) {
-          await new Promise(resolve => setTimeout(resolve, 200));
+      const existingMap = new Map(
+        existingOrders?.map(o => [o.order_sn, { update_time: o.update_time, order_status: o.order_status }]) || []
+      );
+
+      // LỌC CHỈ LẤY ĐƠN MỚI HOẶC CÓ THAY ĐỔI STATUS
+      // So sánh order_status từ API với DB (order_status từ get_order_list)
+      const ordersToFetch = orderList.filter(o => {
+        const existing = existingMap.get(o.order_sn);
+        if (!existing) return true; // Đơn mới
+        // Đơn có status thay đổi
+        if (o.order_status && existing.order_status !== o.order_status) return true;
+        return false;
+      });
+
+      skippedCount += orderList.length - ordersToFetch.length;
+
+      console.log(`[ORDERS-SYNC] Page ${pageCount}: ${ordersToFetch.length} need fetch, ${orderList.length - ordersToFetch.length} skipped (unchanged)`);
+
+      // Fetch order details CHỈ CHO ĐƠN CẦN CẬP NHẬT
+      if (ordersToFetch.length > 0) {
+        for (let i = 0; i < ordersToFetch.length; i += 50) {
+          // Kiểm tra timeout trước mỗi batch
+          const batchElapsed = Date.now() - startTime;
+          if (batchElapsed > MAX_EXECUTION_TIME_MS) {
+            console.log(`[ORDERS-SYNC] Approaching timeout during detail fetch (${batchElapsed}ms)`);
+            stoppedEarly = true;
+            break;
+          }
+
+          const batch = ordersToFetch.slice(i, Math.min(i + 50, ordersToFetch.length));
+          const sns = batch.map(o => o.order_sn);
+          const details = await fetchOrderDetails(supabase, credentials, shopId, token, sns);
+          allOrders.push(...details);
+
+          // Rate limiting between detail batches
+          if (i + 50 < ordersToFetch.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
         }
       }
+
+      if (stoppedEarly) break;
 
       // Lấy next_cursor để gọi trang tiếp theo
       cursor = nextCursor;
@@ -953,11 +1011,11 @@ async function syncMonthChunk(
 
       // Rate limiting between pages
       if (more) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
     }
 
-    console.log(`[ORDERS-SYNC] Month chunk total: ${allOrders.length} orders in ${pageCount} pages`);
+    console.log(`[ORDERS-SYNC] Month chunk total: ${allOrders.length} orders fetched, ${skippedCount} skipped (stopped_early: ${stoppedEarly})`);
 
     // Upsert to database
     let inserted = 0;
@@ -970,11 +1028,12 @@ async function syncMonthChunk(
       // Orders with status COMPLETED will have is_escrow_fetched = false
     }
 
-    console.log(`[ORDERS-SYNC] Chunk completed: ${inserted} new, ${updated} updated`);
+    console.log(`[ORDERS-SYNC] Chunk completed: ${inserted} new, ${updated} updated, ${skippedCount} skipped`);
 
     // Check if we need to continue to next chunk
-    const nextChunkEnd = currentChunkStart;
-    const hasMoreChunks = nextChunkEnd > monthStart;
+    // Nếu stopped early, vẫn cần tiếp tục chunk này
+    const nextChunkEnd = stoppedEarly ? currentChunkEnd : currentChunkStart;
+    const hasMoreChunks = stoppedEarly || nextChunkEnd > monthStart;
     const monthCompleted = !hasMoreChunks;
 
     // Update sync status
@@ -995,6 +1054,9 @@ async function syncMonthChunk(
       synced_months: syncedMonths,
       last_error: null,
     });
+
+    const executionTime = Date.now() - startTime;
+    console.log(`[ORDERS-SYNC] Execution time: ${executionTime}ms`);
 
     return {
       success: true,
@@ -1257,8 +1319,8 @@ function parseDateToTimestamp(dateStr: string, isEndOfDay: boolean = false): num
 }
 
 /**
- * Generate 15-day chunks from a date range
- * Shopee API có giới hạn cứng 15 ngày cho mỗi request
+ * Generate chunks from a date range
+ * Sử dụng CHUNK_SIZE_DAYS (mặc định 7 ngày) để tránh timeout
  */
 function generateDateRangeChunks(startTimestamp: number, endTimestamp: number): Array<{ start: number; end: number }> {
   const chunks: Array<{ start: number; end: number }> = [];
@@ -1284,7 +1346,7 @@ interface DateRangeSyncResult {
 }
 
 /**
- * Sync orders for a specific date range with automatic 15-day chunking
+ * Sync orders for a specific date range with automatic 7-day chunking
  * Input: start_date và end_date (DD/MM/YYYY hoặc YYYY-MM-DD)
  */
 async function syncDateRange(
@@ -1296,6 +1358,7 @@ async function syncDateRange(
   endDate: string,
   chunkIndex: number = 0
 ): Promise<DateRangeSyncResult> {
+  const startTime = Date.now();
   console.log(`[ORDERS-SYNC] Syncing date range: ${startDate} -> ${endDate} for shop ${shopId}`);
 
   try {
@@ -1307,9 +1370,9 @@ async function syncDateRange(
       return { success: false, total_orders_synced: 0, chunks_processed: 0, total_chunks: 0, has_more: false, error: 'start_date must be before end_date' };
     }
 
-    // Generate chunks (15 ngày mỗi chunk)
+    // Generate chunks (7 ngày mỗi chunk)
     const chunks = generateDateRangeChunks(startTimestamp, endTimestamp);
-    console.log(`[ORDERS-SYNC] Generated ${chunks.length} chunks (15-day each)`);
+    console.log(`[ORDERS-SYNC] Generated ${chunks.length} chunks (${CHUNK_SIZE_DAYS}-day each)`);
 
     // Process current chunk
     if (chunkIndex >= chunks.length) {
@@ -1324,14 +1387,31 @@ async function syncDateRange(
       last_error: null,
     });
 
-    // Fetch ALL orders in this chunk using pagination (while response.more == true)
+    // Fetch orders in this chunk using pagination
     let cursor = '';
     let more = true;
     const allOrders: ShopeeOrder[] = [];
     let pageCount = 0;
+    let stoppedEarly = false;
+    let skippedCount = 0;
 
-    // Pagination loop - lấy TẤT CẢ đơn hàng, không giới hạn số lượng
+    // Pagination loop - với giới hạn số đơn và thời gian
     while (more) {
+      // Kiểm tra timeout - dừng sớm nếu gần đến giới hạn
+      const elapsed = Date.now() - startTime;
+      if (elapsed > MAX_EXECUTION_TIME_MS) {
+        console.log(`[ORDERS-SYNC] Approaching timeout (${elapsed}ms), stopping early with ${allOrders.length} orders`);
+        stoppedEarly = true;
+        break;
+      }
+
+      // Kiểm tra số đơn đã lấy
+      if (allOrders.length >= MAX_ORDERS_PER_CHUNK) {
+        console.log(`[ORDERS-SYNC] Reached max orders limit (${MAX_ORDERS_PER_CHUNK}), stopping early`);
+        stoppedEarly = true;
+        break;
+      }
+
       pageCount++;
       const { orders: orderList, more: hasMore, nextCursor } = await fetchOrderList(
         supabase, credentials, shopId, token,
@@ -1344,18 +1424,53 @@ async function syncDateRange(
 
       if (orderList.length === 0) break;
 
-      // Fetch order details in batches of 50
-      for (let i = 0; i < orderList.length; i += 50) {
-        const batch = orderList.slice(i, Math.min(i + 50, orderList.length));
-        const sns = batch.map(o => o.order_sn);
-        const details = await fetchOrderDetails(supabase, credentials, shopId, token, sns);
-        allOrders.push(...details);
+      // LẤY DANH SÁCH ĐƠN ĐÃ CÓ TRONG DB để so sánh
+      const orderSns = orderList.map(o => o.order_sn);
+      const { data: existingOrders } = await supabase
+        .from('apishopee_orders')
+        .select('order_sn, update_time, order_status')
+        .eq('shop_id', shopId)
+        .in('order_sn', orderSns);
 
-        // Rate limiting between detail batches
-        if (i + 50 < orderList.length) {
-          await new Promise(resolve => setTimeout(resolve, 200));
+      const existingMap = new Map(
+        existingOrders?.map(o => [o.order_sn, { update_time: o.update_time, order_status: o.order_status }]) || []
+      );
+
+      // LỌC CHỈ LẤY ĐƠN MỚI HOẶC CÓ THAY ĐỔI STATUS
+      const ordersToFetch = orderList.filter(o => {
+        const existing = existingMap.get(o.order_sn);
+        if (!existing) return true; // Đơn mới
+        if (o.order_status && existing.order_status !== o.order_status) return true;
+        return false;
+      });
+
+      skippedCount += orderList.length - ordersToFetch.length;
+      console.log(`[ORDERS-SYNC] Page ${pageCount}: ${ordersToFetch.length} need fetch, ${orderList.length - ordersToFetch.length} skipped`);
+
+      // Fetch order details CHỈ CHO ĐƠN CẦN CẬP NHẬT
+      if (ordersToFetch.length > 0) {
+        for (let i = 0; i < ordersToFetch.length; i += 50) {
+          // Kiểm tra timeout trước mỗi batch
+          const batchElapsed = Date.now() - startTime;
+          if (batchElapsed > MAX_EXECUTION_TIME_MS) {
+            console.log(`[ORDERS-SYNC] Approaching timeout during detail fetch (${batchElapsed}ms)`);
+            stoppedEarly = true;
+            break;
+          }
+
+          const batch = ordersToFetch.slice(i, Math.min(i + 50, ordersToFetch.length));
+          const sns = batch.map(o => o.order_sn);
+          const details = await fetchOrderDetails(supabase, credentials, shopId, token, sns);
+          allOrders.push(...details);
+
+          // Rate limiting between detail batches
+          if (i + 50 < ordersToFetch.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
         }
       }
+
+      if (stoppedEarly) break;
 
       // Lấy next_cursor để gọi trang tiếp theo
       cursor = nextCursor;
@@ -1363,23 +1478,25 @@ async function syncDateRange(
 
       // Rate limiting between pages
       if (more) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
     }
 
-    console.log(`[ORDERS-SYNC] Total fetched: ${allOrders.length} orders in ${pageCount} pages`);
+    console.log(`[ORDERS-SYNC] Total fetched: ${allOrders.length} orders, ${skippedCount} skipped (stopped_early: ${stoppedEarly})`);
 
     // Upsert to database
     let totalSynced = 0;
     if (allOrders.length > 0) {
       const { inserted, updated } = await upsertOrders(supabase, shopId, allOrders);
       totalSynced = inserted + updated;
-      console.log(`[ORDERS-SYNC] Chunk ${chunkIndex + 1}: ${inserted} new, ${updated} updated`);
+      console.log(`[ORDERS-SYNC] Chunk ${chunkIndex + 1}: ${inserted} new, ${updated} updated, ${skippedCount} skipped`);
       // NOTE: Escrow sync is handled by separate Finance Sync job (runs every hour)
     }
 
     // Update sync status
-    const hasMoreChunks = chunkIndex + 1 < chunks.length;
+    // Nếu stopped early, vẫn cần tiếp tục chunk này (không tăng chunkIndex)
+    const hasMoreChunks = stoppedEarly || (chunkIndex + 1 < chunks.length);
+    const nextChunkIndex = stoppedEarly ? chunkIndex : chunkIndex + 1;
 
     await updateSyncStatus(supabase, shopId, {
       is_syncing: false,
@@ -1388,13 +1505,16 @@ async function syncDateRange(
       last_error: null,
     });
 
+    const executionTime = Date.now() - startTime;
+    console.log(`[ORDERS-SYNC] Execution time: ${executionTime}ms`);
+
     return {
       success: true,
       total_orders_synced: totalSynced,
-      chunks_processed: chunkIndex + 1,
+      chunks_processed: stoppedEarly ? chunkIndex : chunkIndex + 1,
       total_chunks: chunks.length,
       has_more: hasMoreChunks,
-      current_chunk_index: chunkIndex,
+      current_chunk_index: nextChunkIndex,
     };
 
   } catch (error) {

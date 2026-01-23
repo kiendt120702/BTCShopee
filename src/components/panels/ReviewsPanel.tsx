@@ -389,22 +389,26 @@ function ReviewTableRow({ review }: { review: Review; shopId: number }) {
               <Package className="w-4 h-4 text-slate-400" />
             </div>
           )}
-          <p className="text-sm text-slate-800 line-clamp-2 flex-1">
+          <p className="text-sm text-slate-800 truncate flex-1" title={review.item_name || ''}>
             {review.item_name || <span className="text-slate-400 italic">Sản phẩm đã xóa</span>}
           </p>
         </div>
 
         {/* Comment */}
-        {review.comment && (
-          <div>
-            <p className={cn("text-sm text-slate-700", !expanded && "line-clamp-3")}>{review.comment}</p>
-            {review.comment.length > 100 && (
-              <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-500 mt-1">
-                {expanded ? 'Thu gọn' : 'Xem thêm'}
-              </button>
-            )}
-          </div>
-        )}
+        <div>
+          {review.comment ? (
+            <>
+              <p className={cn("text-sm text-slate-700", !expanded && "line-clamp-3")}>{review.comment}</p>
+              {review.comment.length > 100 && (
+                <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-500 mt-1 cursor-pointer">
+                  {expanded ? 'Thu gọn' : 'Xem thêm'}
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-slate-400 italic">Không có bình luận</p>
+          )}
+        </div>
 
         {/* Media */}
         {hasMedia && (
@@ -479,7 +483,7 @@ function ReviewTableRow({ review }: { review: Review; shopId: number }) {
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-slate-800 line-clamp-2 leading-tight">
+              <p className="text-sm text-slate-800 truncate" title={review.item_name || ''}>
                 {review.item_name || (
                   <span className="text-slate-400 italic">Sản phẩm đã xóa hoặc ẩn</span>
                 )}

@@ -9,6 +9,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { logActivity, type ActionCategory, type ActionStatus, type ActionSource } from "../_shared/activity-logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -89,7 +90,22 @@ Deno.serve(async (req: Request) => {
 
     if (createError) {
       console.error("Create user error:", createError);
-      
+
+      // Log failed attempt
+      await logActivity(supabaseAdmin, {
+        userEmail: adminEmail,
+        userName: 'Admin',
+        actionType: 'user_create',
+        actionCategory: 'system' as ActionCategory,
+        actionDescription: `Tạo tài khoản thất bại: ${email}`,
+        targetType: 'user',
+        targetName: email,
+        requestData: { email, full_name: fullName, system_role: role },
+        status: 'failed' as ActionStatus,
+        errorMessage: createError.message,
+        source: 'manual' as ActionSource,
+      });
+
       // Handle specific errors
       if (createError.message.includes("already been registered")) {
         return new Response(
@@ -97,7 +113,7 @@ Deno.serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      
+
       return new Response(
         JSON.stringify({ error: createError.message }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -129,6 +145,26 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log('[admin-create-user] User created successfully:', newUser.user?.email);
+
+    // Log vào system_activity_logs
+    await logActivity(supabaseAdmin, {
+      userId: newUser.user?.id,
+      userEmail: adminEmail,
+      userName: 'Admin',
+      actionType: 'user_create',
+      actionCategory: 'system' as ActionCategory,
+      actionDescription: `Tạo tài khoản mới: ${email} (${role})`,
+      targetType: 'user',
+      targetId: newUser.user?.id,
+      targetName: fullName || email,
+      requestData: {
+        email,
+        full_name: fullName,
+        system_role: role,
+      },
+      status: 'success' as ActionStatus,
+      source: 'manual' as ActionSource,
+    });
 
     return new Response(
       JSON.stringify({
