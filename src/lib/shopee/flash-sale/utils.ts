@@ -251,6 +251,93 @@ export function getErrorMessage(errorCode: string): string {
   return `Đã xảy ra lỗi: ${errorCode}`;
 }
 
+// ==================== DYNAMIC TYPE CALCULATION ====================
+
+/**
+ * Calculate Flash Sale type dynamically based on current time
+ * This ensures correct status regardless of when the data was synced
+ * @param startTime - Unix timestamp (seconds)
+ * @param endTime - Unix timestamp (seconds)
+ * @returns FlashSaleType (1: upcoming, 2: ongoing, 3: expired)
+ */
+export function calculateDynamicType(startTime: number, endTime: number): FlashSaleType {
+  const now = Math.floor(Date.now() / 1000);
+
+  if (now < startTime) {
+    return 1; // Upcoming
+  } else if (now >= startTime && now <= endTime) {
+    return 2; // Ongoing
+  } else {
+    return 3; // Expired
+  }
+}
+
+/**
+ * Enhance Flash Sale with dynamically calculated type
+ * @param sale - Flash Sale object
+ * @returns Flash Sale with updated type
+ */
+export function withDynamicType<T extends { start_time: number; end_time: number; type: FlashSaleType }>(sale: T): T {
+  return {
+    ...sale,
+    type: calculateDynamicType(sale.start_time, sale.end_time),
+  };
+}
+
+// ==================== DEDUPLICATION ====================
+
+/**
+ * Deduplicate Flash Sales by timeslot_id
+ * When multiple flash sales share the same timeslot, keep the most relevant one:
+ * Priority: Enabled (status=1) > Disabled (status=2) > Deleted/Rejected
+ * Then by type: Ongoing > Upcoming > Expired
+ * @param sales - Array of Flash Sales
+ * @returns Deduplicated array of Flash Sales
+ */
+export function deduplicateByTimeslot<T extends { timeslot_id: number; status: FlashSaleStatus; type: FlashSaleType; flash_sale_id: number }>(
+  sales: T[]
+): T[] {
+  const timeslotMap = new Map<number, T>();
+
+  for (const sale of sales) {
+    const existing = timeslotMap.get(sale.timeslot_id);
+
+    if (!existing) {
+      timeslotMap.set(sale.timeslot_id, sale);
+      continue;
+    }
+
+    // Compare and keep the better one
+    const shouldReplace = compareSalePriority(sale, existing) > 0;
+    if (shouldReplace) {
+      timeslotMap.set(sale.timeslot_id, sale);
+    }
+  }
+
+  return Array.from(timeslotMap.values());
+}
+
+/**
+ * Compare two Flash Sales to determine which one has higher priority
+ * @returns positive if a > b, negative if a < b, 0 if equal
+ */
+function compareSalePriority<T extends { status: FlashSaleStatus; type: FlashSaleType; flash_sale_id: number }>(
+  a: T,
+  b: T
+): number {
+  // 1. Prefer enabled (status=1) over others
+  const statusPriority: Record<FlashSaleStatus, number> = { 1: 1, 2: 2, 0: 3, 3: 4 };
+  const statusDiff = (statusPriority[b.status] ?? 99) - (statusPriority[a.status] ?? 99);
+  if (statusDiff !== 0) return statusDiff;
+
+  // 2. Prefer better type (ongoing > upcoming > expired)
+  const typeDiff = (TYPE_PRIORITY[b.type] ?? 99) - (TYPE_PRIORITY[a.type] ?? 99);
+  if (typeDiff !== 0) return typeDiff;
+
+  // 3. Prefer newer flash_sale_id (higher ID = newer)
+  return a.flash_sale_id - b.flash_sale_id;
+}
+
 // ==================== TIME FORMATTING ====================
 
 /**

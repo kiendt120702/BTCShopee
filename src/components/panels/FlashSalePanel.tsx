@@ -39,6 +39,10 @@ import {
   TYPE_PRIORITY,
   ERROR_MESSAGES,
 } from '@/lib/shopee/flash-sale/types';
+import {
+  withDynamicType,
+  deduplicateByTimeslot,
+} from '@/lib/shopee/flash-sale/utils';
 import { CreateFlashSalePanel } from './CreateFlashSalePanel';
 import { AutoSetupDialog } from '@/components/dialogs/AutoSetupDialog';
 import { cn } from '@/lib/utils';
@@ -150,14 +154,18 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
 
   // Filter and sort data
   const filteredData = useMemo(() => {
-    let result = [...(flashSales as unknown as FlashSale[])];
+    // 1. Apply dynamic type calculation based on current time
+    let result = (flashSales as unknown as FlashSale[]).map(sale => withDynamicType(sale));
 
-    // Filter by tab
+    // 2. Deduplicate by timeslot_id - keep only the most relevant flash sale per timeslot
+    result = deduplicateByTimeslot(result);
+
+    // 3. Filter by tab
     if (activeTab !== '0') {
       result = result.filter(s => s.type === Number(activeTab));
     }
 
-    // Sort by priority
+    // 4. Sort by priority (Ongoing > Upcoming > Expired)
     result.sort((a, b) => (TYPE_PRIORITY[a.type] || 99) - (TYPE_PRIORITY[b.type] || 99));
 
     return result;
@@ -177,14 +185,17 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
     setMobilePage(1);
   }, [activeTab]);
 
-  // Count by type
+  // Count by type (using deduplicated and dynamically typed data)
   const counts = useMemo(() => {
-    const sales = flashSales as unknown as FlashSale[];
+    // Apply same processing as filteredData for accurate counts
+    const processed = deduplicateByTimeslot(
+      (flashSales as unknown as FlashSale[]).map(sale => withDynamicType(sale))
+    );
     return {
-      all: sales.length,
-      ongoing: sales.filter(s => s.type === 2).length,
-      upcoming: sales.filter(s => s.type === 1).length,
-      expired: sales.filter(s => s.type === 3).length,
+      all: processed.length,
+      ongoing: processed.filter(s => s.type === 2).length,
+      upcoming: processed.filter(s => s.type === 1).length,
+      expired: processed.filter(s => s.type === 3).length,
     };
   }, [flashSales]);
 
@@ -594,7 +605,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
             <div className="p-8 text-center text-slate-500">Đang tải dữ liệu...</div>
           ) : filteredData.length === 0 ? (
             <div className="p-8 text-center text-slate-500">
-              {flashSales.length === 0
+              {counts.all === 0
                 ? 'Chưa có Flash Sale nào. Nhấn "Lấy dữ liệu" để đồng bộ.'
                 : 'Không có Flash Sale nào phù hợp.'}
             </div>
@@ -715,7 +726,7 @@ export function FlashSalePanel({ shopId, userId }: FlashSalePanelProps) {
               loading={loading}
               loadingMessage="Đang tải dữ liệu..."
               emptyMessage={
-                flashSales.length === 0
+                counts.all === 0
                   ? 'Chưa có Flash Sale nào. Nhấn "Lấy dữ liệu từ Shopee" để đồng bộ.'
                   : 'Không có Flash Sale nào phù hợp với bộ lọc.'
               }
