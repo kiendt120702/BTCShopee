@@ -1,6 +1,7 @@
 /**
  * Users Settings Page - Quản lý người dùng (Admin only)
  * Hiển thị danh sách người dùng và cho phép admin tạo tài khoản mới
+ * Cấu hình chức năng cơ bản (global permissions) cho tất cả user
  */
 
 import { useState, useEffect } from 'react';
@@ -26,17 +27,19 @@ import {
 } from '@/components/ui/dialog';
 import { SimpleDataTable, CellText, CellBadge, CellActions } from '@/components/ui/data-table';
 import { toast } from 'sonner';
-import { Plus, UserPlus, Mail, User, Phone, Shield, RefreshCw, Trash2, Store, Settings, Check } from 'lucide-react';
+import { Plus, UserPlus, Mail, User, Phone, Shield, RefreshCw, Trash2, Store, Check, Search, Zap, Save } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { getFeaturePermissions, getAllAssignablePermissionKeys } from '@/config/menu-config';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { getAssignablePermissions, getAllAssignablePermissionKeys } from '@/config/menu-config';
 
-// Lấy danh sách permissions từ menu config (tự động đồng bộ với sidebar)
-const FEATURE_PERMISSIONS = getFeaturePermissions();
+// Lấy danh sách permissions có thể gán (không bao gồm adminOnly)
+const ASSIGNABLE_PERMISSIONS = getAssignablePermissions();
 
 interface ShopInfo {
   id: string;
   shop_id: number;
   shop_name: string | null;
+  shop_logo?: string | null;
 }
 
 interface UserProfile {
@@ -64,11 +67,19 @@ export default function UsersSettingsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   
-  // Permission dialog state
+  // Shop assignment dialog state
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [savingPermissions, setSavingPermissions] = useState(false);
+
+  // Global permissions dialog state
+  const [isGlobalPermissionsDialogOpen, setIsGlobalPermissionsDialogOpen] = useState(false);
+
+  // Shop permission state
+  const [allShops, setAllShops] = useState<ShopInfo[]>([]);
+  const [selectedShopIds, setSelectedShopIds] = useState<string[]>([]);
+  const [loadingPermissionData, setLoadingPermissionData] = useState(false);
+  const [shopSearchQuery, setShopSearchQuery] = useState('');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -78,6 +89,79 @@ export default function UsersSettingsPage() {
     phone: '',
     systemRole: 'user' as 'admin' | 'user',
   });
+
+  // Global permissions state
+  const [globalPermissions, setGlobalPermissions] = useState<string[]>([]);
+  const [loadingGlobalPermissions, setLoadingGlobalPermissions] = useState(true);
+  const [savingGlobalPermissions, setSavingGlobalPermissions] = useState(false);
+
+  // Fetch global permissions
+  const fetchGlobalPermissions = async () => {
+    setLoadingGlobalPermissions(true);
+    try {
+      const { data, error } = await supabase
+        .from('sys_settings')
+        .select('value')
+        .eq('key', 'global_permissions')
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (data?.value) {
+        setGlobalPermissions(data.value as string[]);
+      } else {
+        // Default: tất cả chức năng cơ bản đều bật
+        setGlobalPermissions(getAllAssignablePermissionKeys());
+      }
+    } catch (error) {
+      console.error('Error fetching global permissions:', error);
+      // Fallback to all permissions
+      setGlobalPermissions(getAllAssignablePermissionKeys());
+    } finally {
+      setLoadingGlobalPermissions(false);
+    }
+  };
+
+  // Save global permissions
+  const handleSaveGlobalPermissions = async () => {
+    setSavingGlobalPermissions(true);
+    try {
+      const { error } = await supabase
+        .from('sys_settings')
+        .upsert({
+          key: 'global_permissions',
+          value: globalPermissions,
+          description: 'Danh sách chức năng cơ bản mà tất cả user đều được dùng',
+        }, { onConflict: 'key' });
+
+      if (error) throw error;
+      toast.success('Đã lưu cấu hình chức năng cơ bản');
+    } catch (error) {
+      console.error('Error saving global permissions:', error);
+      toast.error('Không thể lưu cấu hình');
+    } finally {
+      setSavingGlobalPermissions(false);
+    }
+  };
+
+  // Toggle global permission
+  const toggleGlobalPermission = (key: string) => {
+    setGlobalPermissions(prev =>
+      prev.includes(key)
+        ? prev.filter(p => p !== key)
+        : [...prev, key]
+    );
+  };
+
+  // Toggle all global permissions
+  const toggleAllGlobalPermissions = () => {
+    const allKeys = getAllAssignablePermissionKeys();
+    if (globalPermissions.length === allKeys.length) {
+      setGlobalPermissions([]);
+    } else {
+      setGlobalPermissions(allKeys);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -90,10 +174,11 @@ export default function UsersSettingsPage() {
 
       if (usersError) throw usersError;
 
-      // Fetch all shops first
+      // Fetch all shops first (exclude demo shop 999999001)
       const { data: shopsData, error: shopsError } = await supabase
         .from('apishopee_shops')
-        .select('id, shop_id, shop_name');
+        .select('id, shop_id, shop_name')
+        .neq('shop_id', 999999001);
 
       if (shopsError) {
         console.error('Error fetching shops:', shopsError);
@@ -148,6 +233,7 @@ export default function UsersSettingsPage() {
 
   useEffect(() => {
     fetchUsers();
+    fetchGlobalPermissions();
   }, []);
 
   const handleCreateUser = async () => {
@@ -231,63 +317,141 @@ export default function UsersSettingsPage() {
     return roleInfo?.label || role;
   };
 
-  // Mở dialog phân quyền
-  const openPermissionDialog = (user: UserProfile) => {
+  // Mở dialog gán shop
+  const openPermissionDialog = async (user: UserProfile) => {
     setSelectedUser(user);
-    // Load permissions từ database, nếu null/undefined thì mặc định rỗng
-    const currentPermissions = user.permissions || [];
-    setSelectedPermissions(currentPermissions);
     setIsPermissionDialogOpen(true);
+    setShopSearchQuery('');
+    setLoadingPermissionData(true);
+
+    try {
+      // Load all shops và current shop assignments song song
+      // Filter out demo shop 999999001
+      const [shopsRes, memberRes] = await Promise.all([
+        supabase
+          .from('apishopee_shops')
+          .select('id, shop_id, shop_name, shop_logo')
+          .neq('shop_id', 999999001)
+          .order('shop_name'),
+        supabase
+          .from('apishopee_shop_members')
+          .select('shop_id')
+          .eq('profile_id', user.id)
+          .eq('is_active', true),
+      ]);
+
+      if (shopsRes.error) throw shopsRes.error;
+      if (memberRes.error) throw memberRes.error;
+
+      setAllShops(shopsRes.data || []);
+      setSelectedShopIds((memberRes.data || []).map(m => m.shop_id));
+    } catch (error) {
+      console.error('Error loading shop data:', error);
+      toast.error('Không thể tải danh sách shop');
+    } finally {
+      setLoadingPermissionData(false);
+    }
   };
 
-  // Lưu phân quyền
+  // Lưu shop assignments (không còn lưu per-user permissions)
   const handleSavePermissions = async () => {
     if (!selectedUser) return;
-    
+
     setSavingPermissions(true);
     try {
-      const { error } = await supabase
-        .from('sys_profiles')
-        .update({ permissions: selectedPermissions })
-        .eq('id', selectedUser.id);
+      // Lấy member role để assign shop
+      const { data: rolesData } = await supabase
+        .from('apishopee_roles')
+        .select('id')
+        .eq('name', 'member')
+        .single();
 
-      if (error) throw error;
+      const memberRoleId = rolesData?.id;
 
-      // Cập nhật local state
-      setUsers(prev => prev.map(u => 
-        u.id === selectedUser.id 
-          ? { ...u, permissions: selectedPermissions }
+      // Lấy danh sách shop hiện tại của user
+      const { data: currentMembers } = await supabase
+        .from('apishopee_shop_members')
+        .select('id, shop_id')
+        .eq('profile_id', selectedUser.id)
+        .eq('is_active', true);
+
+      const currentShopIds = (currentMembers || []).map(m => m.shop_id);
+
+      // Shops cần thêm (có trong selectedShopIds nhưng không có trong current)
+      const shopsToAdd = selectedShopIds.filter(id => !currentShopIds.includes(id));
+
+      // Shops cần xóa (có trong current nhưng không có trong selectedShopIds)
+      const memberIdsToDelete = (currentMembers || [])
+        .filter(m => !selectedShopIds.includes(m.shop_id))
+        .map(m => m.id);
+
+      // 1. Thêm shop mới (nếu có)
+      if (shopsToAdd.length > 0 && memberRoleId) {
+        const insertData = shopsToAdd.map(shopId => ({
+          shop_id: shopId,
+          profile_id: selectedUser.id,
+          role_id: memberRoleId,
+          is_active: true,
+        }));
+        const { error: insertError } = await supabase
+          .from('apishopee_shop_members')
+          .insert(insertData);
+
+        if (insertError) throw insertError;
+      }
+
+      // 2. Xóa shop không còn được chọn (nếu có)
+      if (memberIdsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('apishopee_shop_members')
+          .delete()
+          .in('id', memberIdsToDelete);
+
+        if (deleteError) throw deleteError;
+      }
+
+      // Cập nhật local state - chỉ shops
+      const updatedShops = allShops.filter(s => selectedShopIds.includes(s.id));
+      setUsers(prev => prev.map(u =>
+        u.id === selectedUser.id
+          ? { ...u, shops: updatedShops }
           : u
       ));
 
-      toast.success('Cập nhật phân quyền thành công');
+      toast.success('Đã cập nhật shop cho người dùng');
       setIsPermissionDialogOpen(false);
     } catch (error) {
-      console.error('Error saving permissions:', error);
-      toast.error('Không thể cập nhật phân quyền');
+      console.error('Error saving shop assignments:', error);
+      toast.error('Không thể cập nhật');
     } finally {
       setSavingPermissions(false);
     }
   };
 
-  // Toggle permission
-  const togglePermission = (key: string) => {
-    setSelectedPermissions(prev => 
-      prev.includes(key) 
-        ? prev.filter(p => p !== key)
-        : [...prev, key]
+  // Toggle shop selection
+  const toggleShopSelection = (shopId: string) => {
+    setSelectedShopIds(prev =>
+      prev.includes(shopId)
+        ? prev.filter(id => id !== shopId)
+        : [...prev, shopId]
     );
   };
 
-  // Chọn tất cả / Bỏ chọn tất cả
-  const toggleAllPermissions = () => {
-    const availablePermissions = getAllAssignablePermissionKeys();
-    if (selectedPermissions.length === availablePermissions.length) {
-      setSelectedPermissions([]);
+  // Chọn tất cả / Bỏ chọn tất cả shops
+  const toggleAllShops = () => {
+    if (selectedShopIds.length === allShops.length) {
+      setSelectedShopIds([]);
     } else {
-      setSelectedPermissions(availablePermissions);
+      setSelectedShopIds(allShops.map(s => s.id));
     }
   };
+
+  // Filter shops by search query
+  const filteredShops = allShops.filter(shop =>
+    !shopSearchQuery ||
+    shop.shop_name?.toLowerCase().includes(shopSearchQuery.toLowerCase()) ||
+    shop.shop_id.toString().includes(shopSearchQuery)
+  );
 
   const columns = [
     {
@@ -432,6 +596,15 @@ export default function UsersSettingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsGlobalPermissionsDialogOpen(true)}
+            className="border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+          >
+            <Zap className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Chức năng cơ bản</span>
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -599,93 +772,121 @@ export default function UsersSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Permission Dialog */}
+      {/* Shop Assignment Dialog - Simplified (only shop selection) */}
       <Dialog open={isPermissionDialogOpen} onOpenChange={setIsPermissionDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-blue-500" />
-              Phân quyền chức năng
+              <Store className="w-5 h-5 text-orange-500" />
+              Gán Shop cho người dùng
             </DialogTitle>
             <DialogDescription>
-              Chọn các chức năng mà <span className="font-medium text-slate-700">{selectedUser?.full_name || selectedUser?.email}</span> được phép truy cập
+              Chọn các shop mà <span className="font-medium text-slate-700">{selectedUser?.full_name || selectedUser?.email}</span> được quyền truy cập
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4">
-            {/* Select All */}
-            <div className="flex items-center justify-between mb-4 pb-3 border-b">
-              <span className="text-sm font-medium text-slate-700">Chọn tất cả</span>
-              <Checkbox
-                checked={selectedPermissions.length === getAllAssignablePermissionKeys().length}
-                onCheckedChange={toggleAllPermissions}
-              />
+          {loadingPermissionData ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="w-6 h-6 animate-spin text-slate-400" />
+              <span className="ml-2 text-slate-500">Đang tải dữ liệu...</span>
             </div>
-
-            {/* Permission List */}
-            <div className="space-y-3 max-h-[400px] overflow-y-auto">
-              {/* Main features */}
-              <div className="space-y-2">
-                {FEATURE_PERMISSIONS.filter(f => !f.group && !f.adminOnly).map((feature) => {
-                  const Icon = feature.icon;
-                  return (
-                    <label
-                      key={feature.key}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors"
-                    >
-                      <Checkbox
-                        checked={selectedPermissions.includes(feature.key)}
-                        onCheckedChange={() => togglePermission(feature.key)}
-                      />
-                      <Icon className="w-5 h-5 text-slate-500" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-700">{feature.label}</p>
-                        <p className="text-xs text-slate-500">{feature.description}</p>
-                      </div>
-                    </label>
-                  );
-                })}
+          ) : (
+            <div className="space-y-4 py-4">
+              {/* Header with select all */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Store className="w-4 h-4 text-orange-500" />
+                  <h3 className="text-sm font-semibold text-slate-800">Quyền truy cập Shop</h3>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                  <span>Chọn tất cả</span>
+                  <Checkbox
+                    checked={selectedShopIds.length === allShops.length && allShops.length > 0}
+                    onCheckedChange={toggleAllShops}
+                    disabled={allShops.length === 0}
+                  />
+                </label>
               </div>
 
-              {/* Settings group */}
-              <div className="pt-3 border-t">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <Settings className="w-4 h-4" />
-                  Cài đặt
-                </p>
-                <div className="space-y-2">
-                  {FEATURE_PERMISSIONS.filter(f => f.group === 'Cài đặt' && !f.adminOnly).map((feature) => {
-                    const Icon = feature.icon;
-                    return (
+              {/* Search shops */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  placeholder="Tìm shop theo tên hoặc ID..."
+                  value={shopSearchQuery}
+                  onChange={(e) => setShopSearchQuery(e.target.value)}
+                  className="pl-9 h-9"
+                />
+              </div>
+
+              <ScrollArea className="h-[350px] pr-3">
+                {allShops.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                    <Store className="w-10 h-10 mb-2" />
+                    <p className="text-sm">Chưa có shop nào</p>
+                  </div>
+                ) : filteredShops.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                    <Search className="w-10 h-10 mb-2" />
+                    <p className="text-sm">Không tìm thấy shop</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredShops.map((shop) => (
                       <label
-                        key={feature.key}
-                        className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors"
+                        key={shop.id}
+                        className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                          selectedShopIds.includes(shop.id)
+                            ? 'border-orange-300 bg-orange-50'
+                            : 'border-slate-200 hover:bg-slate-50'
+                        }`}
                       >
                         <Checkbox
-                          checked={selectedPermissions.includes(feature.key)}
-                          onCheckedChange={() => togglePermission(feature.key)}
+                          checked={selectedShopIds.includes(shop.id)}
+                          onCheckedChange={() => toggleShopSelection(shop.id)}
                         />
-                        <Icon className="w-5 h-5 text-slate-500" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-700">{feature.label}</p>
-                          <p className="text-xs text-slate-500">{feature.description}</p>
+                        {shop.shop_logo ? (
+                          <img
+                            src={shop.shop_logo}
+                            alt={shop.shop_name || ''}
+                            className="w-9 h-9 rounded-lg object-cover flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                            {shop.shop_name?.[0]?.toUpperCase() || 'S'}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-700 truncate">
+                            {shop.shop_name || `Shop ${shop.shop_id}`}
+                          </p>
+                          <p className="text-xs text-slate-500">ID: {shop.shop_id}</p>
                         </div>
                       </label>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+
+              {/* Shop count info */}
+              <div className="p-2.5 bg-orange-50 rounded-lg flex items-center justify-between">
+                <p className="text-xs text-orange-700">
+                  Đã chọn <strong>{selectedShopIds.length}</strong> / {allShops.length} shop
+                </p>
+                {selectedShopIds.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-xs text-orange-600 hover:text-orange-800 cursor-pointer"
+                    onClick={() => setSelectedShopIds([])}
+                  >
+                    Bỏ chọn tất cả
+                  </button>
+                )}
               </div>
             </div>
+          )}
 
-            {/* Info */}
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-700">
-                <strong>Lưu ý:</strong> Các chức năng quản trị (Quản lý Shop, Quản lý người dùng) chỉ dành cho tài khoản Admin.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
+          <DialogFooter className="border-t pt-4">
             <Button
               variant="outline"
               onClick={() => setIsPermissionDialogOpen(false)}
@@ -695,8 +896,8 @@ export default function UsersSettingsPage() {
             </Button>
             <Button
               onClick={handleSavePermissions}
-              disabled={savingPermissions}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+              disabled={savingPermissions || loadingPermissionData}
+              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
             >
               {savingPermissions ? (
                 <>
@@ -706,11 +907,120 @@ export default function UsersSettingsPage() {
               ) : (
                 <>
                   <Check className="w-4 h-4 mr-2" />
-                  Lưu phân quyền
+                  Lưu
                 </>
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Global Permissions Dialog - Compact Design */}
+      <Dialog open={isGlobalPermissionsDialogOpen} onOpenChange={setIsGlobalPermissionsDialogOpen}>
+        <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
+          {/* Header */}
+          <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-800 text-sm">Chức năng cơ bản</h3>
+                <p className="text-xs text-slate-500">Áp dụng cho tất cả người dùng</p>
+              </div>
+            </div>
+          </div>
+
+          {loadingGlobalPermissions ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="w-5 h-5 animate-spin text-blue-500" />
+            </div>
+          ) : (
+            <>
+              {/* Select all row */}
+              <div className="px-5 py-2.5 border-b bg-slate-50/50 flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  Đã chọn <span className="font-semibold text-blue-600">{globalPermissions.length}</span> / {getAllAssignablePermissionKeys().length} chức năng
+                </span>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer hover:text-blue-600 transition-colors">
+                  <span>Chọn tất cả</span>
+                  <Checkbox
+                    checked={globalPermissions.length === getAllAssignablePermissionKeys().length}
+                    onCheckedChange={toggleAllGlobalPermissions}
+                    className="w-4 h-4"
+                  />
+                </label>
+              </div>
+
+              {/* Features grid */}
+              <div className="px-4 py-3 max-h-[320px] overflow-y-auto">
+                <div className="grid grid-cols-2 gap-2">
+                  {[...ASSIGNABLE_PERMISSIONS.filter(f => !f.group), ...ASSIGNABLE_PERMISSIONS.filter(f => f.group === 'Cài đặt')].map((feature) => {
+                    const Icon = feature.icon;
+                    const isEnabled = globalPermissions.includes(feature.key);
+                    return (
+                      <label
+                        key={feature.key}
+                        className={`group flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                          isEnabled
+                            ? 'border-blue-200 bg-blue-50/80 shadow-sm'
+                            : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50/50'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={isEnabled}
+                          onCheckedChange={() => toggleGlobalPermission(feature.key)}
+                          className="w-4 h-4 flex-shrink-0"
+                        />
+                        <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 transition-colors ${
+                          isEnabled ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
+                        }`}>
+                          <Icon className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-medium truncate ${isEnabled ? 'text-blue-700' : 'text-slate-600'}`}>
+                            {feature.label}
+                          </p>
+                          <p className="text-[10px] text-slate-400 truncate leading-tight">{feature.description}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Footer */}
+          <div className="px-5 py-3 border-t bg-slate-50/50 flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsGlobalPermissionsDialogOpen(false)}
+              disabled={savingGlobalPermissions}
+              className="h-8 px-3 text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              size="sm"
+              onClick={async () => {
+                await handleSaveGlobalPermissions();
+                setIsGlobalPermissionsDialogOpen(false);
+              }}
+              disabled={savingGlobalPermissions || loadingGlobalPermissions}
+              className="h-8 px-4 text-xs bg-blue-600 hover:bg-blue-700"
+            >
+              {savingGlobalPermissions ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5 mr-1.5" />
+                  Lưu cấu hình
+                </>
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
