@@ -154,7 +154,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onMob
       </Link>
 
       {/* Demo Badge */}
-      {user?.email === 'reviewer@betacom.agency' && !collapsed && (
+      {user?.email === 'betacom.work@gmail.com' && !collapsed && (
         <div className="mx-3 mt-3 px-3 py-2 bg-gradient-to-r from-orange-100 to-red-100 rounded-lg border border-orange-200">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />

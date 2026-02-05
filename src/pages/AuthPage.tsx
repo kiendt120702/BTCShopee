@@ -77,8 +77,8 @@ export default function AuthPage() {
   const [searchParams] = useSearchParams();
   const { error, signIn, isAuthenticated } = useAuth();
   const isDemo = searchParams.get('demo') === 'true';
-  const [email, setEmail] = useState(isDemo ? 'reviewer@betacom.agency' : '');
-  const [password, setPassword] = useState(isDemo ? 'ShopeeISV@2024' : '');
+  const [email, setEmail] = useState(isDemo ? 'betacom.work@gmail.com' : '');
+  const [password, setPassword] = useState(isDemo ? 'Admin123a' : '');
   const [localError, setLocalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 

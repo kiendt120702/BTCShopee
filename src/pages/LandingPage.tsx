@@ -329,9 +329,9 @@ export default function LandingPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-500 mb-1">Email</label>
                 <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <code className="text-slate-800 font-mono text-sm flex-1">reviewer@betacom.agency</code>
+                  <code className="text-slate-800 font-mono text-sm flex-1">betacom.work@gmail.com</code>
                   <button
-                    onClick={() => navigator.clipboard.writeText('reviewer@betacom.agency')}
+                    onClick={() => navigator.clipboard.writeText('betacom.work@gmail.com')}
                     className="text-slate-400 hover:text-slate-600 cursor-pointer"
                     title="Copy"
                   >
@@ -344,9 +344,9 @@ export default function LandingPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-500 mb-1">Password</label>
                 <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <code className="text-slate-800 font-mono text-sm flex-1">ShopeeISV@2024</code>
+                  <code className="text-slate-800 font-mono text-sm flex-1">Admin123a</code>
                   <button
-                    onClick={() => navigator.clipboard.writeText('ShopeeISV@2024')}
+                    onClick={() => navigator.clipboard.writeText('Admin123a')}
                     className="text-slate-400 hover:text-slate-600 cursor-pointer"
                     title="Copy"
                   >
